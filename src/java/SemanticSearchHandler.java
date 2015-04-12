@@ -19,16 +19,11 @@ package org.apache.solr.handler.component;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 
-import jdk.nashorn.internal.ir.LiteralNode.ArrayLiteralNode.ArrayUnit;
-
 import org.apache.commons.lang.ArrayUtils;
-import org.apache.derby.iapi.services.io.ArrayUtil;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.index.DirectoryReader;
@@ -48,6 +43,7 @@ import org.apache.solr.common.util.SimpleOrderedMap;
 import org.apache.solr.core.PluginInfo;
 import org.apache.solr.request.SolrQueryRequest;
 import org.apache.solr.response.SolrQueryResponse;
+import org.eclipse.jetty.io.BufferCache.CachedBuffer;
 
 /**
  *
@@ -55,7 +51,7 @@ import org.apache.solr.response.SolrQueryResponse;
  *
  */
 
-enum ENUM_SEMANTIC_METHODS {
+enum ENUM_SEMANTIC_METHOD {
   e_UNKNOWN, 
   e_ESA,
   e_ESA_ANCHORS,
@@ -63,25 +59,43 @@ enum ENUM_SEMANTIC_METHODS {
   e_ESA_ANCHORS_SEE_ALSO
 }
 
+enum ENUM_CONCEPT_TYPE {
+  e_UNKNOWN, 
+  e_TITLE,
+  e_ANCHOR,
+  e_SEE_ALSO,
+  e_ASSOCIATION
+}
+
 class SemanticConcept implements Comparable<SemanticConcept> {
   public String name;
   public String ner; // NE label ("P" --> person, "o" --> organization, "L" --> location, "M" --> misc)
   public String[] category; // first two categories of the title 
-  public float weight;  
+  public float weight;
+  public int id;
+  public int parent_id;
+  ENUM_CONCEPT_TYPE e_concept_type;
   
   public SemanticConcept() {
     name = "";
     ner = "";
     weight = 0.0f;
+    id = 0;
+    parent_id=0;
+    e_concept_type = ENUM_CONCEPT_TYPE.e_UNKNOWN;
   }
   
-  public SemanticConcept(String n, String ne, String cat1, String cat2, float w) {
+  public SemanticConcept(String n, String ne, String cat1, String cat2, float w, 
+      int id, int parent_id, ENUM_CONCEPT_TYPE type) {
     name = n;
     ner = ne;
     weight = w;
     category = new String[2];
     category[0] = cat1;
     category[1] = cat2;
+    e_concept_type = type;
+    this.id = id;
+    this.parent_id = parent_id;    
   }
 
   @Override
@@ -93,11 +107,33 @@ class SemanticConcept implements Comparable<SemanticConcept> {
     else return 0;
     
   }
+
+  public SimpleOrderedMap<Object> getInfo() {
+    SimpleOrderedMap<Object> conceptInfo = new SimpleOrderedMap<Object>();
+    conceptInfo.add("weight", weight);
+    conceptInfo.add("id", id);
+    conceptInfo.add("p_id", parent_id);
+    conceptInfo.add("type", getConceptTypeString(e_concept_type));
+    
+    return conceptInfo;
+  }
+  
+
+  private String getConceptTypeString(ENUM_CONCEPT_TYPE e) {
+    if(e==ENUM_CONCEPT_TYPE.e_TITLE)
+      return "title";
+    else if(e==ENUM_CONCEPT_TYPE.e_ANCHOR)
+      return "anchor";
+    else if(e==ENUM_CONCEPT_TYPE.e_SEE_ALSO)
+      return "seealso";
+    else if(e==ENUM_CONCEPT_TYPE.e_ASSOCIATION)
+      return "association";
+    else return "unknown";
+  }
 }
 
 public class SemanticSearchHandler extends SearchHandler
 {
-  
   private boolean hidden_relax_see_also = false;
   
   private boolean hidden_relax_ner = false;
@@ -109,13 +145,13 @@ public class SemanticSearchHandler extends SearchHandler
   private int hidden_max_hits = 0;
   
   private int hidden_max_title_ngrams = 3;
-  
+    
   @Override
   public void handleRequestBody(SolrQueryRequest req, SolrQueryResponse rsp) throws Exception
   {
     HashMap<String,SemanticConcept> relatedConcepts = null;
     NamedList<Object> semanticConceptsInfo = null;
-    ENUM_SEMANTIC_METHODS e_Method = ENUM_SEMANTIC_METHODS.e_UNKNOWN;
+    ENUM_SEMANTIC_METHOD e_Method = ENUM_SEMANTIC_METHOD.e_UNKNOWN;
     boolean enable_title_search = false;
     
     // get method of semantic concepts retrievals
@@ -186,7 +222,10 @@ public class SemanticSearchHandler extends SearchHandler
             continue;
           }
           newQuery += " OR \"" + sem[j].name + "\"";
-          semanticConceptsInfo.add(sem[j].name, sem[j].weight);
+          SimpleOrderedMap<Object> conceptInfo = sem[j].getInfo();
+          
+          //semanticConceptsInfo.add(sem[j].name, sem[j].weight);
+          semanticConceptsInfo.add(sem[j].name, conceptInfo);
           i++;
         }
         
@@ -211,7 +250,7 @@ public class SemanticSearchHandler extends SearchHandler
    * @param enable_title_search whether we search in wiki titles as well as text or not
    */
   protected void retrieveRelatedConcepts(String concept, HashMap<String,SemanticConcept> relatedConcepts, 
-      int max_hits, ENUM_SEMANTIC_METHODS e_Method, boolean enable_title_search) {
+      int max_hits, ENUM_SEMANTIC_METHOD e_Method, boolean enable_title_search) {
     //TODO: 
     /* do we need to intersect with technical dictionary
      * do we need to score see also based on cross-reference/see also graph similarity (e.g., no of common titles in the see also graph)
@@ -246,6 +285,8 @@ public class SemanticSearchHandler extends SearchHandler
       TopDocs topDocs = searcher.search(query, max_hits);
       if(topDocs.totalHits > 0) {
         ScoreDoc[] hits = topDocs.scoreDocs;
+        int cur_id = 1;
+        int cur_parent_id = 0;
         for(int i = 0 ; i < hits.length; i++) {
           boolean relevant = false;
           IndexableField multiTitles[] = indexReader.document(hits[i].doc).getFields("title");
@@ -256,7 +297,8 @@ public class SemanticSearchHandler extends SearchHandler
           String cat1 = multiCategories.length>0? multiCategories[0].stringValue():"";
           String cat2 = multiCategories.length>1? multiCategories[1].stringValue():"";
           
-          for(IndexableField f : multiTitles) {
+          for(int t=0; t<multiTitles.length; t++) {
+            IndexableField f = multiTitles[t];
             //System.out.println(f.stringValue());
             // check if relevant concept
             boolean relevantTitle = true;//TODO: do we need to call isRelevantConcept(f.stringValue());
@@ -266,15 +308,24 @@ public class SemanticSearchHandler extends SearchHandler
               // check if already there
               SemanticConcept sem = relatedConcepts.get(f.stringValue()); 
               if(sem==null) { // new concept
-                sem = new SemanticConcept(f.stringValue(), ner, cat1, cat2, hits[i].score);
+                if(t==0) { // first title
+                  sem = new SemanticConcept(f.stringValue(), ner, cat1, cat2, hits[i].score,
+                      cur_id, 0, ENUM_CONCEPT_TYPE.e_TITLE);
+                  cur_parent_id = cur_id;
+                }
+                else { // anchor 
+                  sem = new SemanticConcept(f.stringValue(), ner, cat1, cat2, hits[i].score, 
+                    cur_id, cur_parent_id, ENUM_CONCEPT_TYPE.e_ANCHOR);
+                }
+                cur_id++;
               }
               else { // existing concept, update its weight to higher weight
                 sem.weight = sem.weight>hits[i].score?sem.weight:hits[i].score;
               }
               relatedConcepts.put(sem.name, sem);
-              if(e_Method==ENUM_SEMANTIC_METHODS.e_UNKNOWN || 
-                  (e_Method!=ENUM_SEMANTIC_METHODS.e_ESA_ANCHORS && 
-                  e_Method!=ENUM_SEMANTIC_METHODS.e_ESA_ANCHORS_SEE_ALSO)) // only one title is retrieved, we don't use anchors
+              if(e_Method==ENUM_SEMANTIC_METHOD.e_UNKNOWN || 
+                  (e_Method!=ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS && 
+                  e_Method!=ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO)) // only one title is retrieved, we don't use anchors
                 break;
             }
             else
@@ -285,8 +336,8 @@ public class SemanticSearchHandler extends SearchHandler
             // force see also is enabled OR,
             // the original title or one of its anchors is relevant
             // in this case we can add its see_also
-            if(e_Method==ENUM_SEMANTIC_METHODS.e_ESA_SEE_ALSO || 
-                e_Method==ENUM_SEMANTIC_METHODS.e_ESA_ANCHORS_SEE_ALSO) { // add See also to the hit list
+            if(e_Method==ENUM_SEMANTIC_METHOD.e_ESA_SEE_ALSO || 
+                e_Method==ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO) { // add See also to the hit list
               
               IndexableField[] multiSeeAlso = indexReader.document(hits[i].doc).getFields("see_also");
               IndexableField[] multiSeeAlsoNE = indexReader.document(hits[i].doc).getFields("see_also_ne");
@@ -300,7 +351,9 @@ public class SemanticSearchHandler extends SearchHandler
                   SemanticConcept sem = relatedConcepts.get(multiSeeAlso[s].stringValue()); 
                   if(sem==null) { // new concept
                     sem = new SemanticConcept(multiSeeAlso[s].stringValue(), 
-                        multiSeeAlsoNE[s].stringValue(), "", "", hits[i].score);
+                        multiSeeAlsoNE[s].stringValue(), "", "", hits[i].score, 
+                        cur_id, cur_parent_id, ENUM_CONCEPT_TYPE.e_SEE_ALSO);
+                    cur_id++;
                   }
                   else { // existing concept, update its weight to higher weight
                     sem.weight = sem.weight>hits[i].score?sem.weight:hits[i].score;
@@ -342,16 +395,17 @@ public class SemanticSearchHandler extends SearchHandler
       }
       else if(hidden_relax_categories==false) { // check if not allowed category
         for(int i=0; i<concept.category.length; i++) {
-          if(concept.category[i].contains("companies") || 
-              concept.category[i].contains("manufacturers") || 
-              concept.category[i].contains("publishers") || 
-              concept.category[i].contains("births") || 
-              concept.category[i].contains("deaths") || 
-              concept.category[i].contains("anime") || 
-              concept.category[i].contains("movies") || 
-              concept.category[i].contains("theaters") || 
-              concept.category[i].contains("games") ||
-              concept.category[i].contains("channels")) {
+          String c = concept.category[i].toLowerCase();
+          if(c.contains("companies") || 
+              c.contains("manufacturers") || 
+              c.contains("publishers") || 
+              c.contains("births") || 
+              c.contains("deaths") || 
+              c.contains("anime") || 
+              c.contains("movies") || 
+              c.contains("theaters") || 
+              c.contains("games") ||
+              c.contains("channels")) {
             System.out.println(concept.name+"...Removed (CATEGORY)!");
             toRemove.add(concept.name);
             break;
@@ -380,7 +434,7 @@ public class SemanticSearchHandler extends SearchHandler
     String re = "\\S+(\\s\\S+){0,"+String.valueOf(hidden_max_title_ngrams-1)+"}";
     boolean relevant = true;
     if(concept.toLowerCase().matches(re)==false) {
-      relevant = false;      
+      relevant = false;
     }
     re = "list of.*";
     if(concept.toLowerCase().matches(re)==true) {
@@ -393,16 +447,17 @@ public class SemanticSearchHandler extends SearchHandler
     return relevant; 
   }
   
-  private ENUM_SEMANTIC_METHODS getSemanticMethod(String conceptMethod) {
+  private ENUM_SEMANTIC_METHOD getSemanticMethod(String conceptMethod) {
     if(conceptMethod.compareTo("ESA")==0)
-      return ENUM_SEMANTIC_METHODS.e_ESA;
+      return ENUM_SEMANTIC_METHOD.e_ESA;
     else if (conceptMethod.compareTo("ESA_anchors")==0)
-      return ENUM_SEMANTIC_METHODS.e_ESA_ANCHORS;
+      return ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS;
     else if (conceptMethod.compareTo("ESA_seealso")==0)
-      return ENUM_SEMANTIC_METHODS.e_ESA_SEE_ALSO;
+      return ENUM_SEMANTIC_METHOD.e_ESA_SEE_ALSO;
     else if (conceptMethod.compareTo("ESA_anchors_seealso")==0)
-      return ENUM_SEMANTIC_METHODS.e_ESA_ANCHORS_SEE_ALSO;
-    else return ENUM_SEMANTIC_METHODS.e_UNKNOWN;
-  }  
+      return ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO;
+    else return ENUM_SEMANTIC_METHOD.e_UNKNOWN;
+  }
 }
+
 
