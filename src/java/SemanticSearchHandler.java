@@ -43,7 +43,6 @@ import org.apache.solr.common.util.SimpleOrderedMap;
 import org.apache.solr.core.PluginInfo;
 import org.apache.solr.request.SolrQueryRequest;
 import org.apache.solr.response.SolrQueryResponse;
-import org.eclipse.jetty.io.BufferCache.CachedBuffer;
 
 /**
  *
@@ -67,32 +66,37 @@ enum ENUM_CONCEPT_TYPE {
   e_ASSOCIATION
 }
 
-class SemanticConcept implements Comparable<SemanticConcept> {
-  public String name;
-  public String ner; // NE label ("P" --> person, "o" --> organization, "L" --> location, "M" --> misc)
+class CachedConceptInfo {
   public String[] category; // first two categories of the title 
-  public float weight;
-  public int id;
-  public int parent_id;
-  ENUM_CONCEPT_TYPE e_concept_type;
   
-  public SemanticConcept() {
-    name = "";
-    ner = "";
-    weight = 0.0f;
-    id = 0;
-    parent_id=0;
-    e_concept_type = ENUM_CONCEPT_TYPE.e_UNKNOWN;
+  public CachedConceptInfo() {
   }
   
-  public SemanticConcept(String n, String ne, String cat1, String cat2, float w, 
-      int id, int parent_id, ENUM_CONCEPT_TYPE type) {
-    name = n;
-    ner = ne;
-    weight = w;
+  public CachedConceptInfo(String n, String cat1, String cat2) {
     category = new String[2];
     category[0] = cat1;
     category[1] = cat2;
+  }
+}
+
+class SemanticConcept implements Comparable<SemanticConcept> {
+  public CachedConceptInfo cachedInfo = null;
+  public String name = "";
+  public String ner = ""; // NE label ("P" --> person, "o" --> organization, "L" --> location, "M" --> misc)
+  public float weight = 0.0f;
+  public int id = 0;
+  public int parent_id = 0;
+  ENUM_CONCEPT_TYPE e_concept_type = ENUM_CONCEPT_TYPE.e_UNKNOWN;
+  
+  public SemanticConcept() {    
+  }
+  
+  public SemanticConcept(String name, CachedConceptInfo cachedInfo, String ne, float w, 
+      int id, int parent_id, ENUM_CONCEPT_TYPE type) {
+    this.name = name;
+    this.cachedInfo = cachedInfo;
+    ner = ne;
+    weight = w;
     e_concept_type = type;
     this.id = id;
     this.parent_id = parent_id;    
@@ -134,6 +138,18 @@ class SemanticConcept implements Comparable<SemanticConcept> {
 
 public class SemanticSearchHandler extends SearchHandler
 {
+  
+  /* 
+   *
+   */
+  @Override
+  public void init(PluginInfo info) {
+    super.init(info);
+    
+    // cache Wiki titles with some required information for fast retrieval
+    cacheConceptsInfo();
+  }
+
   private boolean hidden_relax_see_also = false;
   
   private boolean hidden_relax_ner = false;
@@ -141,11 +157,19 @@ public class SemanticSearchHandler extends SearchHandler
   private boolean hidden_relax_categories = false;
   
   private boolean hidden_display_wiki_hits = false;
-
+  
+  private boolean hidden_relax_search = false;
+  
+  private String hidden_wiki_search_field = "text";
+  
   private int hidden_max_hits = 0;
   
+  private int hidden_min_wiki_length = 0;
+  
   private int hidden_max_title_ngrams = 3;
-    
+  
+  private HashMap<String,CachedConceptInfo> cachedConceptsInfo = null;
+  
   @Override
   public void handleRequestBody(SolrQueryRequest req, SolrQueryResponse rsp) throws Exception
   {
@@ -178,7 +202,12 @@ public class SemanticSearchHandler extends SearchHandler
     tmp = req.getParams().get("hrelaxcategories");
     if(tmp!=null && tmp.compareTo("y")==0)
       hidden_relax_categories = true;
-
+    
+    // get relax search flag 
+    tmp = req.getParams().get("hrelaxsearch");
+    if(tmp!=null && tmp.compareTo("y")==0)
+      hidden_relax_search = true;
+        
     // get maximum hits in initial wiki search
     tmp = req.getParams().get("hmaxhits");
     if(tmp!=null)
@@ -186,10 +215,23 @@ public class SemanticSearchHandler extends SearchHandler
     else
       hidden_max_hits = Integer.MAX_VALUE;
     
+    // get minimum wiki article length to search
+    tmp = req.getParams().get("hminwikilen");
+    if(tmp!=null)
+      hidden_min_wiki_length = Integer.parseInt(tmp);
+    else
+      hidden_min_wiki_length = 0;
+    
     // get maximum ngrams of wiki titles
     tmp = req.getParams().get("hmaxngrams");
     if(tmp!=null)
       hidden_max_title_ngrams = Integer.parseInt(tmp);
+    
+    // get wiki search field
+    tmp = req.getParams().get("hwikifield");
+    if(tmp!=null)
+      hidden_wiki_search_field = tmp;
+    
     
     // get number of semantic concepts to retrieve 
     String concept = req.getParams().get(CommonParams.Q);
@@ -231,7 +273,10 @@ public class SemanticSearchHandler extends SearchHandler
         
         // add related concepts to the query
         ModifiableSolrParams params = new ModifiableSolrParams(req.getParams());
-        params.set(CommonParams.Q, newQuery);
+        if(hidden_relax_search==false)
+          params.set(CommonParams.Q, newQuery);
+        else
+          params.set(CommonParams.Q, "");
         req.setParams(params);
       }      
     }
@@ -259,23 +304,23 @@ public class SemanticSearchHandler extends SearchHandler
      * do we need to search in title too with boosting factor then remove exact match at the end
      * do we need to add "" here or in the request
      */
-    String indexPath = "./wiki_index";//reader.nextLine();
+    String indexPath = "./wiki_index";
     try {
       // open the index
       IndexReader indexReader = DirectoryReader.open(FSDirectory.open(new File(indexPath)));
       IndexSearcher searcher = new IndexSearcher(indexReader);
       Analyzer stdAnalyzer = new StandardAnalyzer();
-      QueryParser parser = new QueryParser("text", stdAnalyzer);
+      QueryParser parser = new QueryParser(hidden_wiki_search_field, stdAnalyzer);
       Query query = null;
       try {
         
         parser.setAllowLeadingWildcard(true);
-        String queryString;
+        String queryString = "padded_length:["+String.format("%09d", hidden_min_wiki_length)+" TO *]";
         if(enable_title_search) {
-          queryString = "title:"+concept+" OR text:"+concept;
+          queryString += " AND (title:"+concept+" OR "+hidden_wiki_search_field+":"+concept+")";
         }
         else {
-          queryString = "text:"+concept;
+          queryString += " AND ("+hidden_wiki_search_field+":"+concept+")";
         }
         query = parser.parse(queryString);
       } catch (ParseException e) {
@@ -291,12 +336,7 @@ public class SemanticSearchHandler extends SearchHandler
           boolean relevant = false;
           IndexableField multiTitles[] = indexReader.document(hits[i].doc).getFields("title");
           String ner = indexReader.document(hits[i].doc).getField("title_ne").stringValue();
-          
-          // get category information
-          IndexableField multiCategories[] = indexReader.document(hits[i].doc).getFields("category");
-          String cat1 = multiCategories.length>0? multiCategories[0].stringValue():"";
-          String cat2 = multiCategories.length>1? multiCategories[1].stringValue():"";
-          
+          CachedConceptInfo cachedInfo = null;
           for(int t=0; t<multiTitles.length; t++) {
             IndexableField f = multiTitles[t];
             //System.out.println(f.stringValue());
@@ -306,20 +346,26 @@ public class SemanticSearchHandler extends SearchHandler
               relevant = true;
               
               // check if already there
-              SemanticConcept sem = relatedConcepts.get(f.stringValue()); 
+              SemanticConcept sem = relatedConcepts.get(f.stringValue());
               if(sem==null) { // new concept
                 if(t==0) { // first title
-                  sem = new SemanticConcept(f.stringValue(), ner, cat1, cat2, hits[i].score,
+                  cachedInfo = cachedConceptsInfo.get(f.stringValue());
+                  if(cachedInfo==null) {
+                    System.out.println(f.stringValue()+"...title not found!");
+                  }
+                  
+                  sem = new SemanticConcept(f.stringValue(), cachedInfo, ner, hits[i].score,
                       cur_id, 0, ENUM_CONCEPT_TYPE.e_TITLE);
                   cur_parent_id = cur_id;
                 }
                 else { // anchor 
-                  sem = new SemanticConcept(f.stringValue(), ner, cat1, cat2, hits[i].score, 
+                  sem = new SemanticConcept(f.stringValue(), cachedInfo, ner, hits[i].score, 
                     cur_id, cur_parent_id, ENUM_CONCEPT_TYPE.e_ANCHOR);
                 }
                 cur_id++;
               }
               else { // existing concept, update its weight to higher weight
+                cachedInfo = sem.cachedInfo;
                 sem.weight = sem.weight>hits[i].score?sem.weight:hits[i].score;
               }
               relatedConcepts.put(sem.name, sem);
@@ -350,12 +396,19 @@ public class SemanticSearchHandler extends SearchHandler
                   // check if already there
                   SemanticConcept sem = relatedConcepts.get(multiSeeAlso[s].stringValue()); 
                   if(sem==null) { // new concept
+                    cachedInfo = cachedConceptsInfo.get(multiSeeAlso[s].stringValue());
+                    if(cachedInfo==null) {
+                      System.out.println(multiSeeAlso[s].stringValue()+"...see_also not found!");
+                      cachedInfo = new CachedConceptInfo(multiSeeAlso[s].stringValue(), "", "");
+                    }
+                    
                     sem = new SemanticConcept(multiSeeAlso[s].stringValue(), 
-                        multiSeeAlsoNE[s].stringValue(), "", "", hits[i].score, 
-                        cur_id, cur_parent_id, ENUM_CONCEPT_TYPE.e_SEE_ALSO);
+                        cachedInfo, multiSeeAlsoNE[s].stringValue(), 
+                        hits[i].score, cur_id, cur_parent_id, ENUM_CONCEPT_TYPE.e_SEE_ALSO);
                     cur_id++;
                   }
                   else { // existing concept, update its weight to higher weight
+                    cachedInfo = sem.cachedInfo;
                     sem.weight = sem.weight>hits[i].score?sem.weight:hits[i].score;
                   }
                   relatedConcepts.put(sem.name, sem);            
@@ -386,16 +439,16 @@ public class SemanticSearchHandler extends SearchHandler
     ArrayList<String> toRemove = new ArrayList<String>();
     for (SemanticConcept concept : relatedConcepts.values()) {
       if(isRelevantConcept(concept.name)==false) {
-        System.out.println(concept.name+"...Removed!");
+        System.out.println(concept.name+"("+concept.id+")...Removed!");
         toRemove.add(concept.name);
       }
       else if(hidden_relax_ner==false && ArrayUtils.contains(new String[]{"P","L","O"},concept.ner)) { // check if not allowed NE
-        System.out.println(concept.name+"...Removed (NER)!");
+        System.out.println(concept.name+"("+concept.id+")...Removed (NER)!");
         toRemove.add(concept.name);
       }
       else if(hidden_relax_categories==false) { // check if not allowed category
-        for(int i=0; i<concept.category.length; i++) {
-          String c = concept.category[i].toLowerCase();
+        for(int i=0; i<concept.cachedInfo.category.length; i++) {
+          String c = concept.cachedInfo.category[i].toLowerCase();
           if(c.contains("companies") || 
               c.contains("manufacturers") || 
               c.contains("publishers") || 
@@ -406,7 +459,7 @@ public class SemanticSearchHandler extends SearchHandler
               c.contains("theaters") || 
               c.contains("games") ||
               c.contains("channels")) {
-            System.out.println(concept.name+"...Removed (CATEGORY)!");
+            System.out.println(concept.name+"("+concept.id+")...Removed (CATEGORY)!");
             toRemove.add(concept.name);
             break;
           }
@@ -458,6 +511,56 @@ public class SemanticSearchHandler extends SearchHandler
       return ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO;
     else return ENUM_SEMANTIC_METHOD.e_UNKNOWN;
   }
+  
+  /**
+   * cache Wiki titles with some required information for fast retrieval
+   */
+  private void cacheConceptsInfo() {
+    String indexPath = "./wiki_index";//reader.nextLine();
+    try {
+      // open the index
+      IndexReader indexReader = DirectoryReader.open(FSDirectory.open(new File(indexPath)));
+      IndexSearcher searcher = new IndexSearcher(indexReader);
+      Analyzer stdAnalyzer = new StandardAnalyzer();
+      QueryParser parser = new QueryParser("title", stdAnalyzer);
+      Query query = null;
+      try {
+        
+        parser.setAllowLeadingWildcard(true);
+        String queryString;
+        queryString = "*";
+        
+        query = parser.parse(queryString);
+      } catch (ParseException e) {
+        // TODO Auto-generated catch block
+        e.printStackTrace();
+      } //
+      TopDocs topDocs = searcher.search(query, Integer.MAX_VALUE);
+      if(topDocs.totalHits > 0) {
+        cachedConceptsInfo = new HashMap<String,CachedConceptInfo>();
+        String title = "";
+        String cat1 = "";
+        String cat2 = "";
+        IndexableField[] multi = null;
+        CachedConceptInfo cachedInfo = null;
+        for(ScoreDoc d : topDocs.scoreDocs) {
+          // retrieve title
+          title = indexReader.document(d.doc).getFields("title")[0].stringValue();
+          
+          // retrieve categories
+          multi = indexReader.document(d.doc).getFields("category");
+          cat1 = multi.length>0? multi[0].stringValue():"";
+          cat2 = multi.length>1? multi[1].stringValue():"";
+          
+          cachedInfo = new CachedConceptInfo(title, cat1, cat2);
+          cachedConceptsInfo.put(title,  cachedInfo);
+        }
+        System.out.println("cached ("+cachedConceptsInfo.size()+") concepts.");
+      }
+    } catch (IOException e) {
+      // TODO Auto-generated catch block
+      
+      e.printStackTrace();
+    }
+  }
 }
-
-
