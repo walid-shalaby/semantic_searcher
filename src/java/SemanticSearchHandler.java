@@ -17,11 +17,19 @@
 
 package org.apache.solr.handler.component;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Hashtable;
 
 import org.apache.commons.lang.ArrayUtils;
 import org.apache.lucene.analysis.Analyzer;
@@ -44,6 +52,8 @@ import org.apache.solr.core.PluginInfo;
 import org.apache.solr.request.SolrQueryRequest;
 import org.apache.solr.response.SolrQueryResponse;
 
+import com.sun.corba.se.spi.orbutil.fsm.Input;
+
 /**
  *
  * Refer SOLR-281
@@ -55,7 +65,9 @@ enum ENUM_SEMANTIC_METHOD {
   e_ESA,
   e_ESA_ANCHORS,
   e_ESA_SEE_ALSO,
-  e_ESA_ANCHORS_SEE_ALSO
+  e_ESA_SEE_ALSO_ASSO,
+  e_ESA_ANCHORS_SEE_ALSO, 
+  e_ESA_ANCHORS_SEE_ALSO_ASSO
 }
 
 enum ENUM_CONCEPT_TYPE {
@@ -76,6 +88,17 @@ class CachedConceptInfo {
     category = new String[2];
     category[0] = cat1;
     category[1] = cat2;
+  }
+}
+
+class CachedAssociationInfo {
+  ArrayList<Integer> associations = null;
+  public CachedAssociationInfo() {
+    associations = new ArrayList<Integer>();
+  }
+  
+  public void addAssociation(int idx) {
+    associations.add(new Integer(idx));
   }
 }
 
@@ -146,8 +169,13 @@ public class SemanticSearchHandler extends SearchHandler
   public void init(PluginInfo info) {
     super.init(info);
     
+    // cache Wiki see also associations for fast retrieval
+    cacheAssociationsInfo();
+
     // cache Wiki titles with some required information for fast retrieval
-    cacheConceptsInfo();
+    //cacheConceptsInfo();
+    cachedConceptsInfo = new HashMap<String,CachedConceptInfo>();
+    
   }
 
   private boolean hidden_relax_see_also = false;
@@ -169,6 +197,11 @@ public class SemanticSearchHandler extends SearchHandler
   private int hidden_max_title_ngrams = 3;
   
   private HashMap<String,CachedConceptInfo> cachedConceptsInfo = null;
+  
+  private HashMap<String,Integer> titleIntMapping = null;
+  private HashMap<Integer,String> titleStrMapping = null;
+  
+  private HashMap<Integer,CachedAssociationInfo> cachedAssociationsInfo = null;
   
   @Override
   public void handleRequestBody(SolrQueryRequest req, SolrQueryResponse rsp) throws Exception
@@ -352,6 +385,7 @@ public class SemanticSearchHandler extends SearchHandler
                   cachedInfo = cachedConceptsInfo.get(f.stringValue());
                   if(cachedInfo==null) {
                     System.out.println(f.stringValue()+"...title not found!");
+                    cachedInfo = new CachedConceptInfo(f.stringValue(), "", "");
                   }
                   
                   sem = new SemanticConcept(f.stringValue(), cachedInfo, ner, hits[i].score,
@@ -371,7 +405,8 @@ public class SemanticSearchHandler extends SearchHandler
               relatedConcepts.put(sem.name, sem);
               if(e_Method==ENUM_SEMANTIC_METHOD.e_UNKNOWN || 
                   (e_Method!=ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS && 
-                  e_Method!=ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO)) // only one title is retrieved, we don't use anchors
+                  e_Method!=ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO && 
+                  e_Method!=ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO_ASSO)) // only one title is retrieved, we don't use anchors
                 break;
             }
             else
@@ -417,6 +452,46 @@ public class SemanticSearchHandler extends SearchHandler
                   System.out.println(multiSeeAlso[s].stringValue()+"...see-also not relevant!");
                 //System.out.println();
               }              
+            }
+            else if(e_Method==ENUM_SEMANTIC_METHOD.e_ESA_SEE_ALSO_ASSO || 
+                e_Method==ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO_ASSO) { // add see also using association mining
+              Integer key = titleIntMapping.get(indexReader.document(hits[i].doc).getFields("title")[0].stringValue());
+              CachedAssociationInfo assoInfo = cachedAssociationsInfo.get(key);
+              if(assoInfo==null) {
+                System.out.println(indexReader.document(hits[i].doc).getFields("title")[0].stringValue() + "..no associations cached!");
+              }
+              else {
+                for(int a=0; a<assoInfo.associations.size(); a++) {
+                  String asso = titleStrMapping.get(assoInfo.associations.get(a));
+                  
+                  // check if relevant concept
+                  boolean relevantTitle = true; //TODO: do we need to call isRelevantConcept(multiSeeAlso[s].stringValue());
+                  if(relevantTitle==true) {
+                    // check if already there
+                    SemanticConcept sem = relatedConcepts.get(asso); 
+                    if(sem==null) { // new concept
+                      cachedInfo = cachedConceptsInfo.get(asso);
+                      if(cachedInfo==null) {
+                        System.out.println(asso+"...see_also not found!");
+                        cachedInfo = new CachedConceptInfo(asso, "", "");
+                      }
+                      
+                      sem = new SemanticConcept(asso, 
+                          cachedInfo, "M", 
+                          hits[i].score, cur_id, cur_parent_id, ENUM_CONCEPT_TYPE.e_SEE_ALSO);
+                      cur_id++;
+                    }
+                    else { // existing concept, update its weight to higher weight
+                      cachedInfo = sem.cachedInfo;
+                      sem.weight = sem.weight>hits[i].score?sem.weight:hits[i].score;
+                    }
+                    relatedConcepts.put(sem.name, sem);
+                  }
+                  else
+                    System.out.println(asso+"...see-also not relevant!");
+                  
+                }
+              }
             }
           }
         }
@@ -509,6 +584,10 @@ public class SemanticSearchHandler extends SearchHandler
       return ENUM_SEMANTIC_METHOD.e_ESA_SEE_ALSO;
     else if (conceptMethod.compareTo("ESA_anchors_seealso")==0)
       return ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO;
+    else if (conceptMethod.compareTo("ESA_seealso_asso")==0)
+      return ENUM_SEMANTIC_METHOD.e_ESA_SEE_ALSO_ASSO;
+    else if (conceptMethod.compareTo("ESA_anchors_seealso_asso")==0)
+      return ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO_ASSO;    
     else return ENUM_SEMANTIC_METHOD.e_UNKNOWN;
   }
   
@@ -562,5 +641,59 @@ public class SemanticSearchHandler extends SearchHandler
       
       e.printStackTrace();
     }
+  }
+  
+  // cache all title associations into memory for fast access
+  private void cacheAssociationsInfo() {
+    try {
+      BufferedReader f;      
+      f = new BufferedReader(new FileReader("./wiki_associations.txt"));
+      
+      int curassoc=0, key=0, idx;
+      String line;
+      CachedAssociationInfo associationInfo = null;
+      
+      titleIntMapping = new HashMap<String,Integer>(4000000);
+      titleStrMapping = new HashMap<Integer,String>(4000000);
+      
+      cachedAssociationsInfo = new HashMap<Integer,CachedAssociationInfo>(4000000);
+      
+      line = f.readLine();
+      String[] association = new String[2];
+      while(line!=null) {
+        String[] associations = line.split("#\\$#");
+        for(int i=0; i<associations.length; i++) {
+          
+          association = associations[i].split("/\\\\/\\\\");
+          
+          // look it up
+          Integer index = titleIntMapping.get(association[0]);
+          if(index==null) { // add it
+            titleIntMapping.put(association[0], new Integer(curassoc));
+            titleStrMapping.put(new Integer(curassoc), association[0]);
+            idx = curassoc;
+            curassoc++;
+          }
+          else {
+            idx = index.intValue();
+          }
+          if(i==0) {
+            associationInfo = new CachedAssociationInfo();
+            key = idx;
+          }
+          else { // add it to associations
+            associationInfo.addAssociation(idx);
+          }
+        }
+        if(associations.length>0)
+          cachedAssociationsInfo.put(new Integer(key), associationInfo);
+        
+        line = f.readLine();
+      }
+      f.close();
+      
+    } catch (IOException e) {
+        throw new RuntimeException();
+    }    
   }
 }
