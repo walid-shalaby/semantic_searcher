@@ -17,19 +17,14 @@
 
 package org.apache.solr.handler.component;
 
-import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Hashtable;
 
 import org.apache.commons.lang.ArrayUtils;
 import org.apache.lucene.analysis.Analyzer;
@@ -51,8 +46,6 @@ import org.apache.solr.common.util.SimpleOrderedMap;
 import org.apache.solr.core.PluginInfo;
 import org.apache.solr.request.SolrQueryRequest;
 import org.apache.solr.response.SolrQueryResponse;
-
-import com.sun.corba.se.spi.orbutil.fsm.Input;
 
 /**
  *
@@ -219,6 +212,8 @@ public class SemanticSearchHandler extends SearchHandler
   
   private boolean hidden_relax_same_title = false;
   
+  private boolean hidden_relatedness_experiment = false;
+  
   private HashMap<String,CachedConceptInfo> cachedConceptsInfo = null;
   
   private HashMap<String,Integer> titleIntMapping = null;
@@ -244,6 +239,13 @@ public class SemanticSearchHandler extends SearchHandler
     if(tmp!=null && tmp.compareTo("on")==0)
       measure_relatedness = true;
     
+    // get semantic relatedness experiment flag 
+    tmp = req.getParams().get("hrelatednessexpr");
+    if(tmp!=null && tmp.compareTo("y")==0)
+      hidden_relatedness_experiment = true;
+    else
+      hidden_relatedness_experiment = false;
+    
     // get enable title search flag 
     tmp = req.getParams().get("titlesearch");
     if(tmp!=null && tmp.compareTo("on")==0)
@@ -253,36 +255,50 @@ public class SemanticSearchHandler extends SearchHandler
     tmp = req.getParams().get("hrelaxseealso");
     if(tmp!=null && tmp.compareTo("y")==0)
       hidden_relax_see_also = true;
+    else
+      hidden_relax_see_also = false;
 
     // get relax NER flag 
     tmp = req.getParams().get("hrelaxner");
     if(tmp!=null && tmp.compareTo("y")==0)
       hidden_relax_ner = true;
+    else
+      hidden_relax_ner = false;
     
     // get relax categories flag 
     tmp = req.getParams().get("hrelaxcategories");
     if(tmp!=null && tmp.compareTo("y")==0)
       hidden_relax_categories = true;
+    else
+      hidden_relax_categories = false;
     
     // get relax search flag 
     tmp = req.getParams().get("hrelaxsearch");
     if(tmp!=null && tmp.compareTo("y")==0)
       hidden_relax_search = true;
+    else
+      hidden_relax_search = false;
 
     // get relax list of filter flag 
     tmp = req.getParams().get("hrelaxlistof");
     if(tmp!=null && tmp.compareTo("y")==0)
       hidden_relax_listof = true;
+    else
+      hidden_relax_listof = false;
     
     // get relax same title flag 
     tmp = req.getParams().get("hrelaxsametitle");
     if(tmp!=null && tmp.compareTo("y")==0)
-      hidden_relax_same_title = true;    
+      hidden_relax_same_title = true;
+    else
+      hidden_relax_same_title = false;
     
     // get relax disambiguation filter flag 
     tmp = req.getParams().get("hrelaxdisambig");
     if(tmp!=null && tmp.compareTo("y")==0)
       hidden_relax_disambig = true;
+    else
+      hidden_relax_disambig = false;
     
     // get maximum hits in initial wiki search
     tmp = req.getParams().get("hmaxhits");
@@ -394,100 +410,146 @@ public class SemanticSearchHandler extends SearchHandler
       ENUM_SEMANTIC_METHOD e_Method, boolean enable_title_search) {
     NamedList<Object> semanticConceptsInfo = null;
     
-    String[] concepts = searchConcepts.split(",");
-    if(concepts.length==2) {
-      HashMap<String,SemanticConcept> relatedConcepts1 = null;
-      HashMap<String,SemanticConcept> relatedConcepts2 = null;
-      
-      // retrieve related semantic concepts for concept 1
-      System.out.println("Retrieving for concept: ("+concepts[0]+")");
-      relatedConcepts1 = new HashMap<String,SemanticConcept>();
-      retrieveRelatedConcepts(concepts[0], relatedConcepts1, hidden_max_hits, e_Method, enable_title_search);
-      
-      // remove irrelevant concepts
-      filterRelatedConcepts(relatedConcepts1);
-      
-      // retrieve related semantic concepts for concept 2
-      System.out.println("Retrieving for concept: ("+concepts[1]+")");
-      relatedConcepts2 = new HashMap<String,SemanticConcept>();
-      retrieveRelatedConcepts(concepts[1], relatedConcepts2, hidden_max_hits, e_Method, enable_title_search);
-      
-      // remove irrelevant concepts
-      filterRelatedConcepts(relatedConcepts2);
-      
-      if(relatedConcepts1.size()>0 || relatedConcepts2.size()>0) {
-        semanticConceptsInfo = new SimpleOrderedMap<Object>();
-        ArrayList<SemanticConcept> toAdd = new ArrayList<SemanticConcept>(); 
-        // add concepts appearing in concept 1 and not concept 2
-        for(String s : relatedConcepts1.keySet()) {
-          if(relatedConcepts2.get(s)==null) {
-            SemanticConcept c = new SemanticConcept(relatedConcepts1.get(s));
-            c.weight = 0;
-            toAdd.add(c);            
-          }
+    if(hidden_relatedness_experiment==true) {
+      // open concepts file and loop on concepts
+      BufferedReader in;
+      try {
+        in = new BufferedReader(new FileReader("./concepts.txt"));
+        FileWriter out = new FileWriter("./concepts-sim.txt");
+        if(in!=null && out!=null) {        
+          String line;        
+          line = in.readLine();
+          while(line!=null) {
+            // expected format (concept1,concept2)
+            String[] concepts = line.split(",");
+            
+            // calculating similarity between each two concepts
+            HashMap<String,SemanticConcept> relatedConcepts1 = new HashMap<String,SemanticConcept>();
+            HashMap<String,SemanticConcept> relatedConcepts2 = new HashMap<String,SemanticConcept>();
+            
+            double similarity = getRelatedness(concepts[0], concepts[1], 
+                concepts_num, e_Method, enable_title_search, 
+                relatedConcepts1, relatedConcepts2);
+            
+            out.write(concepts[0]+","+concepts[1]+","+similarity+"\n");
+            
+            line = in.readLine();
+            }
+          in.close();
+          out.close();
         }
-        for(int i=0; i<toAdd.size(); i++)
-          relatedConcepts2.put(toAdd.get(i).name, toAdd.get(i));
-        
-        toAdd.clear();
-        
-        // add concepts appearing in concept 2 and not concept 1
-        for(String s : relatedConcepts2.keySet()) {
-          if(relatedConcepts1.get(s)==null) {
-            SemanticConcept c = new SemanticConcept(relatedConcepts2.get(s));
-            c.weight = 0;
-            toAdd.add(c);
-          }
-        }
-        for(int i=0; i<toAdd.size(); i++)
-          relatedConcepts1.put(toAdd.get(i).name, toAdd.get(i));
-        
-        toAdd.clear();
-        
-        // calculate cosine similarity
-        double norm1=0, norm2=0, dot_product=0;
-        for(SemanticConcept c1 : relatedConcepts1.values()) {
-          SemanticConcept c2 = relatedConcepts2.get(c1.name);
-          dot_product += c1.weight*c2.weight;
-          norm1 += Math.pow(c1.weight, 2.0);
-          norm2 += Math.pow(c2.weight, 2.0);
-        }
-        double similarity = dot_product/(Math.sqrt(norm1)*Math.sqrt(norm2));
-        
-        semanticConceptsInfo.add("similarity", similarity);
-        
-        // add concepts related to concept 1 to response
-        SimpleOrderedMap<Object> conceptInfo1 = new SimpleOrderedMap<Object>();
-        int ind=0;
-        for(SemanticConcept c : relatedConcepts1.values()) {
-          SimpleOrderedMap<Object> conceptInfo = c.getInfo();
-          conceptInfo1.add(c.name, conceptInfo);
-          ind++;
-          if(ind==concepts_num || ind==relatedConcepts1.size())
-            break;
-        }
-        semanticConceptsInfo.add(concepts[0], conceptInfo1);
-        
-        // add concepts related to concept 2 to response
-        SimpleOrderedMap<Object> conceptInfo2 = new SimpleOrderedMap<Object>();
-        ind=0;
-        for(SemanticConcept c : relatedConcepts2.values()) {
-          SimpleOrderedMap<Object> conceptInfo = c.getInfo();
-          conceptInfo2.add(c.name, conceptInfo);
-          ind++;
-          if(ind==concepts_num || ind==relatedConcepts2.size())
-            break;
-        }
-        semanticConceptsInfo.add(concepts[1], conceptInfo2);
+      } catch (IOException e) {
+        throw new RuntimeException();
       }
     }
-    else { // invalid format (expected concept1,concept2)
-      
+    else {
+      String[] concepts = searchConcepts.split(",");
+      if(concepts.length==2) {
+        HashMap<String,SemanticConcept> relatedConcepts1 = new HashMap<String,SemanticConcept>();
+        HashMap<String,SemanticConcept> relatedConcepts2 = new HashMap<String,SemanticConcept>();
+        
+        double similarity = getRelatedness(concepts[0], concepts[1], 
+            concepts_num, e_Method, enable_title_search, 
+            relatedConcepts1, relatedConcepts2);
+        
+        if(relatedConcepts1.size()>0 || relatedConcepts2.size()>0) {          
+          semanticConceptsInfo = new SimpleOrderedMap<Object>();
+          
+          semanticConceptsInfo.add("similarity", similarity);
+        
+          // add concepts related to concept 1 to response
+          SimpleOrderedMap<Object> conceptInfo1 = new SimpleOrderedMap<Object>();
+          int ind=0;
+          for(SemanticConcept c : relatedConcepts1.values()) {
+            SimpleOrderedMap<Object> conceptInfo = c.getInfo();
+            conceptInfo1.add(c.name, conceptInfo);
+            ind++;
+            if(ind==concepts_num || ind==relatedConcepts1.size())
+              break;
+          }
+          semanticConceptsInfo.add(concepts[0], conceptInfo1);
+          
+          // add concepts related to concept 2 to response
+          SimpleOrderedMap<Object> conceptInfo2 = new SimpleOrderedMap<Object>();
+          ind=0;
+          for(SemanticConcept c : relatedConcepts2.values()) {
+            SimpleOrderedMap<Object> conceptInfo = c.getInfo();
+            conceptInfo2.add(c.name, conceptInfo);
+            ind++;
+            if(ind==concepts_num || ind==relatedConcepts2.size())
+              break;
+          }
+          semanticConceptsInfo.add(concepts[1], conceptInfo2);
+        }
+      }
+      else { // invalid format (expected concept1,concept2)
+        
+      }
     }
     return semanticConceptsInfo;
   }
   
-  
+  protected double getRelatedness(String concept1, String concept2, int concepts_num, 
+      ENUM_SEMANTIC_METHOD e_Method, boolean enable_title_search, 
+      HashMap<String,SemanticConcept> relatedConcepts1, 
+      HashMap<String,SemanticConcept> relatedConcepts2) {
+    double similarity = Double.MAX_VALUE;
+    
+    // retrieve related semantic concepts for concept 1
+    System.out.println("Retrieving for concept: ("+concept1+")");
+    retrieveRelatedConcepts(concept1, relatedConcepts1, hidden_max_hits, e_Method, enable_title_search);
+    
+    // remove irrelevant concepts
+    filterRelatedConcepts(relatedConcepts1);
+    
+    // retrieve related semantic concepts for concept 2
+    System.out.println("Retrieving for concept: ("+concept2+")");
+    retrieveRelatedConcepts(concept2, relatedConcepts2, hidden_max_hits, e_Method, enable_title_search);
+    
+    // remove irrelevant concepts
+    filterRelatedConcepts(relatedConcepts2);
+    
+    if(relatedConcepts1.size()>0 || relatedConcepts2.size()>0) {
+      ArrayList<SemanticConcept> toAdd = new ArrayList<SemanticConcept>(); 
+      // add concepts appearing in concept 1 and not concept 2
+      for(String s : relatedConcepts1.keySet()) {
+        if(relatedConcepts2.get(s)==null) {
+          SemanticConcept c = new SemanticConcept(relatedConcepts1.get(s));
+          c.weight = 0;
+          toAdd.add(c);            
+        }
+      }
+      for(int i=0; i<toAdd.size(); i++)
+        relatedConcepts2.put(toAdd.get(i).name, toAdd.get(i));
+      
+      toAdd.clear();
+      
+      // add concepts appearing in concept 2 and not concept 1
+      for(String s : relatedConcepts2.keySet()) {
+        if(relatedConcepts1.get(s)==null) {
+          SemanticConcept c = new SemanticConcept(relatedConcepts2.get(s));
+          c.weight = 0;
+          toAdd.add(c);
+        }
+      }
+      for(int i=0; i<toAdd.size(); i++)
+        relatedConcepts1.put(toAdd.get(i).name, toAdd.get(i));
+      
+      toAdd.clear();
+      
+      // calculate cosine similarity
+      double norm1=0, norm2=0, dot_product=0;
+      for(SemanticConcept c1 : relatedConcepts1.values()) {
+        SemanticConcept c2 = relatedConcepts2.get(c1.name);
+        dot_product += c1.weight*c2.weight;
+        norm1 += Math.pow(c1.weight, 2.0);
+        norm2 += Math.pow(c2.weight, 2.0);
+      }
+      similarity = dot_product/(Math.sqrt(norm1)*Math.sqrt(norm2));
+    }
+    
+    return similarity;
+  }
   /*
    * @param concept source concept for which we search for related concepts
    * @param relatedConcepts related concepts retrieved
