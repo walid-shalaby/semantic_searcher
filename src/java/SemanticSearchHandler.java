@@ -117,7 +117,7 @@ class SemanticConcept implements Comparable<SemanticConcept> {
   }
   
   public SemanticConcept(String name, CachedConceptInfo cachedInfo, String ne, float w, 
-      int id, int parent_id, int asso, ENUM_CONCEPT_TYPE type) {
+    int id, int parent_id, int asso, ENUM_CONCEPT_TYPE type) {
     this.name = name;
     this.cachedInfo = cachedInfo;
     ner = ne;
@@ -126,6 +126,17 @@ class SemanticConcept implements Comparable<SemanticConcept> {
     this.id = id;
     this.parent_id = parent_id;
     this.asso_cnt = asso;
+  }
+
+  public SemanticConcept(SemanticConcept c) {
+    this.name = c.name;
+    this.cachedInfo = c.cachedInfo;
+    ner = c.ner;
+    weight = c.weight;
+    e_concept_type = c.e_concept_type;
+    this.id = c.id;
+    this.parent_id = c.parent_id;
+    this.asso_cnt = c.asso_cnt;
   }
 
   @Override
@@ -218,15 +229,20 @@ public class SemanticSearchHandler extends SearchHandler
   @Override
   public void handleRequestBody(SolrQueryRequest req, SolrQueryResponse rsp) throws Exception
   {
-    HashMap<String,SemanticConcept> relatedConcepts = null;
     NamedList<Object> semanticConceptsInfo = null;
     ENUM_SEMANTIC_METHOD e_Method = ENUM_SEMANTIC_METHOD.e_UNKNOWN;
     boolean enable_title_search = false;
+    boolean measure_relatedness = false;
     
     // get method of semantic concepts retrievals
     String tmp = req.getParams().get("conceptsmethod");
     if(tmp!=null)
       e_Method = getSemanticMethod(tmp);
+    
+    // get measure relatedness flag 
+    tmp = req.getParams().get("measure_relatedness");
+    if(tmp!=null && tmp.compareTo("on")==0)
+      measure_relatedness = true;
     
     // get enable title search flag 
     tmp = req.getParams().get("titlesearch");
@@ -258,7 +274,7 @@ public class SemanticSearchHandler extends SearchHandler
     if(tmp!=null && tmp.compareTo("y")==0)
       hidden_relax_listof = true;
     
- // get relax same title flag 
+    // get relax same title flag 
     tmp = req.getParams().get("hrelaxsametitle");
     if(tmp!=null && tmp.compareTo("y")==0)
       hidden_relax_same_title = true;    
@@ -308,44 +324,18 @@ public class SemanticSearchHandler extends SearchHandler
     }
     
     if(concepts_num>0) {
-      // retrieve related semantic concepts      
-      relatedConcepts = new HashMap<String,SemanticConcept>();
-      retrieveRelatedConcepts(concept, relatedConcepts, hidden_max_hits, e_Method, enable_title_search);
-      
-      // remove irrelevant concepts
-      filterRelatedConcepts(relatedConcepts);
-      
-      if(relatedConcepts.size()>0) {        
-        // sort concepts
-        SemanticConcept sem[] = new SemanticConcept[relatedConcepts.size()];
-        sem = (SemanticConcept[])relatedConcepts.values().toArray(sem);
-        Arrays.sort(sem);
+      if(measure_relatedness==false) {
+        semanticConceptsInfo = doSemanticSearch(concept, concepts_num, e_Method, 
+            enable_title_search, req);
+      }
+      else {
+        semanticConceptsInfo = doSemanticRelatedness(concept, concepts_num, e_Method, enable_title_search);
         
-        // add concepts to query and to response
-        String newQuery = concept;
-        semanticConceptsInfo = new SimpleOrderedMap<Object>();
-        for(int i=0,j=0; i<concepts_num && i<sem.length; j++) {
-          // remove a concept that exactly match original concept
-          if(hidden_relax_same_title==false && concept.compareToIgnoreCase(sem[j].name)==0) {
-            System.out.println(sem[j].name+"...Removed!");
-            continue;
-          }
-          newQuery += " OR \"" + sem[j].name + "\"";
-          
-          SimpleOrderedMap<Object> conceptInfo = sem[j].getInfo();
-          //semanticConceptsInfo.add(sem[j].name, sem[j].weight);
-          semanticConceptsInfo.add(sem[j].name, conceptInfo);
-          i++;
-        }
-        
-        // add related concepts to the query
+        // clear search string
         ModifiableSolrParams params = new ModifiableSolrParams(req.getParams());
-        if(hidden_relax_search==false)
-          params.set(CommonParams.Q, newQuery);
-        else
-          params.set(CommonParams.Q, "");
+        params.set(CommonParams.Q, "");
         req.setParams(params);
-      }      
+      }
     }
     
     super.handleRequestBody(req, rsp);
@@ -353,6 +343,150 @@ public class SemanticSearchHandler extends SearchHandler
     // return back found semantic concepts in response
     rsp.getValues().add("semantic_concepts",semanticConceptsInfo);
   }
+  
+  protected NamedList<Object> doSemanticSearch(String concept, int concepts_num, 
+      ENUM_SEMANTIC_METHOD e_Method, boolean enable_title_search, SolrQueryRequest req) {
+    NamedList<Object> semanticConceptsInfo = null;
+    HashMap<String,SemanticConcept> relatedConcepts = null;
+    
+    // retrieve related semantic concepts      
+    relatedConcepts = new HashMap<String,SemanticConcept>();
+    retrieveRelatedConcepts(concept, relatedConcepts, hidden_max_hits, e_Method, enable_title_search);
+    
+    // remove irrelevant concepts
+    filterRelatedConcepts(relatedConcepts);
+    
+    if(relatedConcepts.size()>0) {        
+      // sort concepts
+      SemanticConcept sem[] = new SemanticConcept[relatedConcepts.size()];
+      sem = (SemanticConcept[])relatedConcepts.values().toArray(sem);
+      Arrays.sort(sem);
+      
+      // add concepts to query and to response
+      String newQuery = concept;
+      semanticConceptsInfo = new SimpleOrderedMap<Object>();
+      for(int i=0,j=0; i<concepts_num && i<sem.length; j++) {
+        // remove a concept that exactly match original concept
+        if(hidden_relax_same_title==false && concept.compareToIgnoreCase(sem[j].name)==0) {
+          System.out.println(sem[j].name+"...Removed!");
+          continue;
+        }
+        newQuery += " OR \"" + sem[j].name + "\"";
+        
+        SimpleOrderedMap<Object> conceptInfo = sem[j].getInfo();
+        //semanticConceptsInfo.add(sem[j].name, sem[j].weight);
+        semanticConceptsInfo.add(sem[j].name, conceptInfo);
+        i++;
+      }
+      
+      // add related concepts to the query
+      ModifiableSolrParams params = new ModifiableSolrParams(req.getParams());
+      if(hidden_relax_search==false)
+        params.set(CommonParams.Q, newQuery);
+      else
+        params.set(CommonParams.Q, "");
+      req.setParams(params);
+    }
+    return semanticConceptsInfo;
+  }
+  
+  protected NamedList<Object> doSemanticRelatedness(String searchConcepts, int concepts_num, 
+      ENUM_SEMANTIC_METHOD e_Method, boolean enable_title_search) {
+    NamedList<Object> semanticConceptsInfo = null;
+    
+    String[] concepts = searchConcepts.split(",");
+    if(concepts.length==2) {
+      HashMap<String,SemanticConcept> relatedConcepts1 = null;
+      HashMap<String,SemanticConcept> relatedConcepts2 = null;
+      
+      // retrieve related semantic concepts for concept 1
+      System.out.println("Retrieving for concept: ("+concepts[0]+")");
+      relatedConcepts1 = new HashMap<String,SemanticConcept>();
+      retrieveRelatedConcepts(concepts[0], relatedConcepts1, hidden_max_hits, e_Method, enable_title_search);
+      
+      // remove irrelevant concepts
+      filterRelatedConcepts(relatedConcepts1);
+      
+      // retrieve related semantic concepts for concept 2
+      System.out.println("Retrieving for concept: ("+concepts[1]+")");
+      relatedConcepts2 = new HashMap<String,SemanticConcept>();
+      retrieveRelatedConcepts(concepts[1], relatedConcepts2, hidden_max_hits, e_Method, enable_title_search);
+      
+      // remove irrelevant concepts
+      filterRelatedConcepts(relatedConcepts2);
+      
+      if(relatedConcepts1.size()>0 || relatedConcepts2.size()>0) {
+        semanticConceptsInfo = new SimpleOrderedMap<Object>();
+        ArrayList<SemanticConcept> toAdd = new ArrayList<SemanticConcept>(); 
+        // add concepts appearing in concept 1 and not concept 2
+        for(String s : relatedConcepts1.keySet()) {
+          if(relatedConcepts2.get(s)==null) {
+            SemanticConcept c = new SemanticConcept(relatedConcepts1.get(s));
+            c.weight = 0;
+            toAdd.add(c);            
+          }
+        }
+        for(int i=0; i<toAdd.size(); i++)
+          relatedConcepts2.put(toAdd.get(i).name, toAdd.get(i));
+        
+        toAdd.clear();
+        
+        // add concepts appearing in concept 2 and not concept 1
+        for(String s : relatedConcepts2.keySet()) {
+          if(relatedConcepts1.get(s)==null) {
+            SemanticConcept c = new SemanticConcept(relatedConcepts2.get(s));
+            c.weight = 0;
+            toAdd.add(c);
+          }
+        }
+        for(int i=0; i<toAdd.size(); i++)
+          relatedConcepts1.put(toAdd.get(i).name, toAdd.get(i));
+        
+        toAdd.clear();
+        
+        // calculate cosine similarity
+        double norm1=0, norm2=0, dot_product=0;
+        for(SemanticConcept c1 : relatedConcepts1.values()) {
+          SemanticConcept c2 = relatedConcepts2.get(c1.name);
+          dot_product += c1.weight*c2.weight;
+          norm1 += Math.pow(c1.weight, 2.0);
+          norm2 += Math.pow(c2.weight, 2.0);
+        }
+        double similarity = dot_product/(Math.sqrt(norm1)*Math.sqrt(norm2));
+        
+        semanticConceptsInfo.add("similarity", similarity);
+        
+        // add concepts related to concept 1 to response
+        SimpleOrderedMap<Object> conceptInfo1 = new SimpleOrderedMap<Object>();
+        int ind=0;
+        for(SemanticConcept c : relatedConcepts1.values()) {
+          SimpleOrderedMap<Object> conceptInfo = c.getInfo();
+          conceptInfo1.add(c.name, conceptInfo);
+          ind++;
+          if(ind==concepts_num || ind==relatedConcepts1.size())
+            break;
+        }
+        semanticConceptsInfo.add(concepts[0], conceptInfo1);
+        
+        // add concepts related to concept 2 to response
+        SimpleOrderedMap<Object> conceptInfo2 = new SimpleOrderedMap<Object>();
+        ind=0;
+        for(SemanticConcept c : relatedConcepts2.values()) {
+          SimpleOrderedMap<Object> conceptInfo = c.getInfo();
+          conceptInfo2.add(c.name, conceptInfo);
+          ind++;
+          if(ind==concepts_num || ind==relatedConcepts2.size())
+            break;
+        }
+        semanticConceptsInfo.add(concepts[1], conceptInfo2);
+      }
+    }
+    else { // invalid format (expected concept1,concept2)
+      
+    }
+    return semanticConceptsInfo;
+  }
+  
   
   /*
    * @param concept source concept for which we search for related concepts
@@ -769,3 +903,4 @@ public class SemanticSearchHandler extends SearchHandler
     }    
   }
 }
+
