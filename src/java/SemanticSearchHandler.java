@@ -529,18 +529,22 @@ public class SemanticSearchHandler extends SearchHandler
       SemanticConcept[] sem = new SemanticConcept[relatedConcepts1.size()];
       sem = (SemanticConcept[])relatedConcepts1.values().toArray(sem);
       Arrays.sort(sem);
-      int keepSize = Math.min(concepts_num, relatedConcepts1.size());
       relatedConcepts1.clear();
-      for(int i=0; i<keepSize; i++)
+      for(int i=0,j=0; i<sem.length && j<concepts_num; i++) {
         relatedConcepts1.put(sem[i].name, sem[i]);
+        if(sem[i].e_concept_type==ENUM_CONCEPT_TYPE.e_TITLE)
+          j++;
+      }
       
       sem = new SemanticConcept[relatedConcepts2.size()];
       sem = (SemanticConcept[])relatedConcepts2.values().toArray(sem);
       Arrays.sort(sem);
-      keepSize = Math.min(concepts_num, relatedConcepts2.size());
       relatedConcepts2.clear();
-      for(int i=0; i<keepSize; i++)
+      for(int i=0,j=0; i<sem.length && j<concepts_num; i++) {
         relatedConcepts2.put(sem[i].name, sem[i]);
+        if(sem[i].e_concept_type==ENUM_CONCEPT_TYPE.e_TITLE)
+          j++;
+      }
       
       ArrayList<SemanticConcept> toAdd = new ArrayList<SemanticConcept>(); 
       // add concepts appearing in concept 1 and not concept 2
