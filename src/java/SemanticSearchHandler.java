@@ -167,8 +167,41 @@ class SemanticConcept implements Comparable<SemanticConcept> {
   }
 }
 
+class ConfigParams {
+  public ENUM_SEMANTIC_METHOD e_Method = ENUM_SEMANTIC_METHOD.e_UNKNOWN;
+  public boolean enable_title_search = false;
+  public boolean measure_relatedness = false;
+  public boolean hidden_relax_see_also = false;
+  public boolean hidden_relax_ner = false;
+  public boolean hidden_relax_categories = false;
+  public boolean hidden_display_wiki_hits = false;
+  public boolean hidden_relax_search = false;
+  public boolean hidden_relax_disambig = false;
+  public boolean hidden_relax_listof = false;
+  public boolean hidden_relax_same_title = false;
+  public boolean hidden_relatedness_experiment = false;
+  public int hidden_max_hits = 0;
+  public int hidden_min_wiki_length = 0;
+  public int hidden_min_asso_cnt = 1;
+  public int hidden_max_title_ngrams = 3;
+  public int concepts_num = 0;
+  public String hidden_wiki_search_field = "text";
+  public String experiment_in_path = "";
+  public String experiment_out_path = "";
+  
+  public ConfigParams() {
+    
+  }
+}
+
 public class SemanticSearchHandler extends SearchHandler
 {
+  private HashMap<String,CachedConceptInfo> cachedConceptsInfo = null;
+  
+  private HashMap<String,Integer> titleIntMapping = null;
+  private HashMap<Integer,String> titleStrMapping = null;
+  
+  private HashMap<Integer,CachedAssociationInfo> cachedAssociationsInfo = null;
   
   /* 
    *
@@ -186,184 +219,143 @@ public class SemanticSearchHandler extends SearchHandler
     
   }
 
-  private boolean hidden_relax_see_also = false;
-  
-  private boolean hidden_relax_ner = false;
-  
-  private boolean hidden_relax_categories = false;
-  
-  private boolean hidden_display_wiki_hits = false;
-  
-  private boolean hidden_relax_search = false;
-  
-  private String hidden_wiki_search_field = "text";
-  
-  private int hidden_max_hits = 0;
-  
-  private int hidden_min_wiki_length = 0;
-  
-  private int hidden_min_asso_cnt = 1;
-  
-  private int hidden_max_title_ngrams = 3;
-  
-  private boolean hidden_relax_disambig = false;
-  
-  private boolean hidden_relax_listof = false;
-  
-  private boolean hidden_relax_same_title = false;
-  
-  private boolean hidden_relatedness_experiment = false;
-  
-  private HashMap<String,CachedConceptInfo> cachedConceptsInfo = null;
-  
-  private HashMap<String,Integer> titleIntMapping = null;
-  private HashMap<Integer,String> titleStrMapping = null;
-  
-  private HashMap<Integer,CachedAssociationInfo> cachedAssociationsInfo = null;
-  
   @Override
   public void handleRequestBody(SolrQueryRequest req, SolrQueryResponse rsp) throws Exception
   {
     NamedList<Object> semanticConceptsInfo = null;
-    ENUM_SEMANTIC_METHOD e_Method = ENUM_SEMANTIC_METHOD.e_UNKNOWN;
-    boolean enable_title_search = false;
-    boolean measure_relatedness = false;
-    String experiment_in_path = "";
-    String experiment_out_path = "";
+    
+    ConfigParams params = new ConfigParams(); 
     
     // get method of semantic concepts retrievals
     String tmp = req.getParams().get("conceptsmethod");
     if(tmp!=null)
-      e_Method = getSemanticMethod(tmp);
+      params.e_Method = getSemanticMethod(tmp);
     
     // get measure relatedness flag 
     tmp = req.getParams().get("measure_relatedness");
     if(tmp!=null && tmp.compareTo("on")==0)
-      measure_relatedness = true;
+      params.measure_relatedness = true;
     
     // get semantic relatedness experiment flag 
     tmp = req.getParams().get("hrelatednessexpr");
     if(tmp!=null && tmp.compareTo("y")==0)
-      hidden_relatedness_experiment = true;
+      params.hidden_relatedness_experiment = true;
     else
-      hidden_relatedness_experiment = false;
+      params.hidden_relatedness_experiment = false;
     
     // get method of experiment input file
     tmp = req.getParams().get("hexperin");
     if(tmp!=null)
-      experiment_in_path = tmp;
+      params.experiment_in_path = tmp;
     
     // get method of experiment input file
     tmp = req.getParams().get("hexperout");
     if(tmp!=null)
-      experiment_out_path = tmp;
+      params.experiment_out_path = tmp;
     
     // get enable title search flag 
     tmp = req.getParams().get("titlesearch");
     if(tmp!=null && tmp.compareTo("on")==0)
-      enable_title_search = true;
+      params.enable_title_search = true;
     
     // get force see also flag 
     tmp = req.getParams().get("hrelaxseealso");
     if(tmp!=null && tmp.compareTo("y")==0)
-      hidden_relax_see_also = true;
+      params.hidden_relax_see_also = true;
     else
-      hidden_relax_see_also = false;
+      params.hidden_relax_see_also = false;
 
     // get relax NER flag 
     tmp = req.getParams().get("hrelaxner");
     if(tmp!=null && tmp.compareTo("y")==0)
-      hidden_relax_ner = true;
+      params.hidden_relax_ner = true;
     else
-      hidden_relax_ner = false;
+      params.hidden_relax_ner = false;
     
     // get relax categories flag 
     tmp = req.getParams().get("hrelaxcategories");
     if(tmp!=null && tmp.compareTo("y")==0)
-      hidden_relax_categories = true;
+      params.hidden_relax_categories = true;
     else
-      hidden_relax_categories = false;
+      params.hidden_relax_categories = false;
     
     // get relax search flag 
     tmp = req.getParams().get("hrelaxsearch");
     if(tmp!=null && tmp.compareTo("y")==0)
-      hidden_relax_search = true;
+      params.hidden_relax_search = true;
     else
-      hidden_relax_search = false;
+      params.hidden_relax_search = false;
 
     // get relax list of filter flag 
     tmp = req.getParams().get("hrelaxlistof");
     if(tmp!=null && tmp.compareTo("y")==0)
-      hidden_relax_listof = true;
+      params.hidden_relax_listof = true;
     else
-      hidden_relax_listof = false;
+      params.hidden_relax_listof = false;
     
     // get relax same title flag 
     tmp = req.getParams().get("hrelaxsametitle");
     if(tmp!=null && tmp.compareTo("y")==0)
-      hidden_relax_same_title = true;
+      params.hidden_relax_same_title = true;
     else
-      hidden_relax_same_title = false;
+      params.hidden_relax_same_title = false;
     
     // get relax disambiguation filter flag 
     tmp = req.getParams().get("hrelaxdisambig");
     if(tmp!=null && tmp.compareTo("y")==0)
-      hidden_relax_disambig = true;
+      params.hidden_relax_disambig = true;
     else
-      hidden_relax_disambig = false;
+      params.hidden_relax_disambig = false;
     
     // get maximum hits in initial wiki search
     tmp = req.getParams().get("hmaxhits");
     if(tmp!=null)
-      hidden_max_hits = Integer.parseInt(tmp);
+      params.hidden_max_hits = Integer.parseInt(tmp);
     else
-      hidden_max_hits = Integer.MAX_VALUE;
+      params.hidden_max_hits = Integer.MAX_VALUE;
     
     // get maximum hits in initial wiki search
     tmp = req.getParams().get("hminassocnt");
     if(tmp!=null)
-      hidden_min_asso_cnt = Integer.parseInt(tmp);
+      params.hidden_min_asso_cnt = Integer.parseInt(tmp);
     else
-      hidden_min_asso_cnt = 1;
+      params.hidden_min_asso_cnt = 1;
     
     // get minimum wiki article length to search
     tmp = req.getParams().get("hminwikilen");
     if(tmp!=null)
-      hidden_min_wiki_length = Integer.parseInt(tmp);
+      params.hidden_min_wiki_length = Integer.parseInt(tmp);
     else
-      hidden_min_wiki_length = 0;
+      params.hidden_min_wiki_length = 0;
     
     // get maximum ngrams of wiki titles
     tmp = req.getParams().get("hmaxngrams");
     if(tmp!=null)
-      hidden_max_title_ngrams = Integer.parseInt(tmp);
+      params.hidden_max_title_ngrams = Integer.parseInt(tmp);
     
     // get wiki search field
     tmp = req.getParams().get("hwikifield");
     if(tmp!=null)
-      hidden_wiki_search_field = tmp;
+      params.hidden_wiki_search_field = tmp;
     
     
     // get number of semantic concepts to retrieve 
     String concept = req.getParams().get(CommonParams.Q);
-    int concepts_num = 0;
     if (req.getParams().getInt("conceptsno")!=null){
-      concepts_num = req.getParams().getInt("conceptsno");
+      params.concepts_num = req.getParams().getInt("conceptsno");
     }
     
-    if(concepts_num>0) {
-      if(measure_relatedness==false) {
-        semanticConceptsInfo = doSemanticSearch(concept, concepts_num, e_Method, 
-            enable_title_search, req);
+    if(params.concepts_num>0) {
+      if(params.measure_relatedness==false) {
+        semanticConceptsInfo = doSemanticSearch(concept, params, req);
       }
       else {
-        semanticConceptsInfo = doSemanticRelatedness(concept, concepts_num, e_Method, 
-            enable_title_search, experiment_in_path, experiment_out_path);
+        semanticConceptsInfo = doSemanticRelatedness(concept, params);
         
         // clear search string
-        ModifiableSolrParams params = new ModifiableSolrParams(req.getParams());
-        params.set(CommonParams.Q, "");
-        req.setParams(params);
+        ModifiableSolrParams qparams = new ModifiableSolrParams(req.getParams());
+        qparams.set(CommonParams.Q, "");
+        req.setParams(qparams);
       }
     }
     
@@ -373,17 +365,17 @@ public class SemanticSearchHandler extends SearchHandler
     rsp.getValues().add("semantic_concepts",semanticConceptsInfo);
   }
   
-  protected NamedList<Object> doSemanticSearch(String concept, int concepts_num, 
-      ENUM_SEMANTIC_METHOD e_Method, boolean enable_title_search, SolrQueryRequest req) {
+  protected NamedList<Object> doSemanticSearch(String concept, ConfigParams params,  
+      SolrQueryRequest req) {
     NamedList<Object> semanticConceptsInfo = null;
     HashMap<String,SemanticConcept> relatedConcepts = null;
     
     // retrieve related semantic concepts      
     relatedConcepts = new HashMap<String,SemanticConcept>();
-    retrieveRelatedConcepts(concept, relatedConcepts, hidden_max_hits, e_Method, enable_title_search);
+    retrieveRelatedConcepts(concept, relatedConcepts, params);
     
     // remove irrelevant concepts
-    filterRelatedConcepts(relatedConcepts);
+    filterRelatedConcepts(relatedConcepts, params);
     
     if(relatedConcepts.size()>0) {        
       // sort concepts
@@ -394,9 +386,9 @@ public class SemanticSearchHandler extends SearchHandler
       // add concepts to query and to response
       String newQuery = concept;
       semanticConceptsInfo = new SimpleOrderedMap<Object>();
-      for(int i=0,j=0; i<concepts_num && i<sem.length; j++) {
+      for(int i=0,j=0; i<params.concepts_num && i<sem.length; j++) {
         // remove a concept that exactly match original concept
-        if(hidden_relax_same_title==false && concept.compareToIgnoreCase(sem[j].name)==0) {
+        if(params.hidden_relax_same_title==false && concept.compareToIgnoreCase(sem[j].name)==0) {
           System.out.println(sem[j].name+"...Removed!");
           continue;
         }
@@ -409,27 +401,25 @@ public class SemanticSearchHandler extends SearchHandler
       }
       
       // add related concepts to the query
-      ModifiableSolrParams params = new ModifiableSolrParams(req.getParams());
-      if(hidden_relax_search==false)
-        params.set(CommonParams.Q, newQuery);
+      ModifiableSolrParams qparams = new ModifiableSolrParams(req.getParams());
+      if(params.hidden_relax_search==false)
+        qparams.set(CommonParams.Q, newQuery);
       else
-        params.set(CommonParams.Q, "");
-      req.setParams(params);
+        qparams.set(CommonParams.Q, "");
+      req.setParams(qparams);
     }
     return semanticConceptsInfo;
   }
   
-  protected NamedList<Object> doSemanticRelatedness(String searchConcepts, int concepts_num, 
-      ENUM_SEMANTIC_METHOD e_Method, boolean enable_title_search, 
-      String experiment_in_path, String experiment_out_path) {
+  protected NamedList<Object> doSemanticRelatedness(String searchConcepts, ConfigParams params) {
     NamedList<Object> semanticConceptsInfo = null;
     
-    if(hidden_relatedness_experiment==true) {
+    if(params.hidden_relatedness_experiment==true) {
       // open concepts file and loop on concepts
       BufferedReader in;
       try {
-        in = new BufferedReader(new FileReader("./"+experiment_in_path));
-        FileWriter out = new FileWriter("./"+experiment_out_path);
+        in = new BufferedReader(new FileReader("./"+params.experiment_in_path));
+        FileWriter out = new FileWriter("./"+params.experiment_out_path);
         if(in!=null && out!=null) {        
           String line;        
           line = in.readLine();
@@ -442,8 +432,7 @@ public class SemanticSearchHandler extends SearchHandler
             HashMap<String,SemanticConcept> relatedConcepts2 = new HashMap<String,SemanticConcept>();
             
             double similarity = getRelatedness(concepts[0], concepts[1], 
-                concepts_num, e_Method, enable_title_search, 
-                relatedConcepts1, relatedConcepts2);
+                relatedConcepts1, relatedConcepts2, params);
             
             out.write(concepts[0]+","+concepts[1]+","+similarity+"\n");
             out.flush();
@@ -464,8 +453,7 @@ public class SemanticSearchHandler extends SearchHandler
         HashMap<String,SemanticConcept> relatedConcepts2 = new HashMap<String,SemanticConcept>();
         
         double similarity = getRelatedness(concepts[0], concepts[1], 
-            concepts_num, e_Method, enable_title_search, 
-            relatedConcepts1, relatedConcepts2);
+            relatedConcepts1, relatedConcepts2, params);
         
         if(relatedConcepts1.size()>0 || relatedConcepts2.size()>0) {          
           semanticConceptsInfo = new SimpleOrderedMap<Object>();
@@ -479,7 +467,7 @@ public class SemanticSearchHandler extends SearchHandler
             SimpleOrderedMap<Object> conceptInfo = c.getInfo();
             conceptInfo1.add(c.name, conceptInfo);
             ind++;
-            if(ind==concepts_num || ind==relatedConcepts1.size())
+            if(ind==params.concepts_num || ind==relatedConcepts1.size())
               break;
           }
           semanticConceptsInfo.add(concepts[0], conceptInfo1);
@@ -491,7 +479,7 @@ public class SemanticSearchHandler extends SearchHandler
             SimpleOrderedMap<Object> conceptInfo = c.getInfo();
             conceptInfo2.add(c.name, conceptInfo);
             ind++;
-            if(ind==concepts_num || ind==relatedConcepts2.size())
+            if(ind==params.concepts_num || ind==relatedConcepts2.size())
               break;
           }
           semanticConceptsInfo.add(concepts[1], conceptInfo2);
@@ -504,25 +492,25 @@ public class SemanticSearchHandler extends SearchHandler
     return semanticConceptsInfo;
   }
   
-  protected double getRelatedness(String concept1, String concept2, int concepts_num, 
-      ENUM_SEMANTIC_METHOD e_Method, boolean enable_title_search, 
+  protected double getRelatedness(String concept1, String concept2, 
       HashMap<String,SemanticConcept> relatedConcepts1, 
-      HashMap<String,SemanticConcept> relatedConcepts2) {
+      HashMap<String,SemanticConcept> relatedConcepts2, 
+      ConfigParams params) {
     double similarity = Double.MAX_VALUE;
     
     // retrieve related semantic concepts for concept 1
     System.out.println("Retrieving for concept: ("+concept1+")");
-    retrieveRelatedConcepts(concept1, relatedConcepts1, hidden_max_hits, e_Method, enable_title_search);
+    retrieveRelatedConcepts(concept1, relatedConcepts1, params);
     
     // remove irrelevant concepts
-    filterRelatedConcepts(relatedConcepts1);
+    filterRelatedConcepts(relatedConcepts1, params);
     
     // retrieve related semantic concepts for concept 2
     System.out.println("Retrieving for concept: ("+concept2+")");
-    retrieveRelatedConcepts(concept2, relatedConcepts2, hidden_max_hits, e_Method, enable_title_search);
+    retrieveRelatedConcepts(concept2, relatedConcepts2, params);
     
     // remove irrelevant concepts
-    filterRelatedConcepts(relatedConcepts2);
+    filterRelatedConcepts(relatedConcepts2, params);
     
     if(relatedConcepts1.size()>0 || relatedConcepts2.size()>0) {
       // keep only required number of concepts
@@ -530,7 +518,7 @@ public class SemanticSearchHandler extends SearchHandler
       sem = (SemanticConcept[])relatedConcepts1.values().toArray(sem);
       Arrays.sort(sem);
       relatedConcepts1.clear();
-      for(int i=0,j=0; i<sem.length && j<concepts_num; i++) {
+      for(int i=0,j=0; i<sem.length && j<params.concepts_num; i++) {
         relatedConcepts1.put(sem[i].name, sem[i]);
         if(sem[i].e_concept_type==ENUM_CONCEPT_TYPE.e_TITLE)
           j++;
@@ -540,7 +528,7 @@ public class SemanticSearchHandler extends SearchHandler
       sem = (SemanticConcept[])relatedConcepts2.values().toArray(sem);
       Arrays.sort(sem);
       relatedConcepts2.clear();
-      for(int i=0,j=0; i<sem.length && j<concepts_num; i++) {
+      for(int i=0,j=0; i<sem.length && j<params.concepts_num; i++) {
         relatedConcepts2.put(sem[i].name, sem[i]);
         if(sem[i].e_concept_type==ENUM_CONCEPT_TYPE.e_TITLE)
           j++;
@@ -594,7 +582,7 @@ public class SemanticSearchHandler extends SearchHandler
    * @param enable_title_search whether we search in wiki titles as well as text or not
    */
   protected void retrieveRelatedConcepts(String concept, HashMap<String,SemanticConcept> relatedConcepts, 
-      int max_hits, ENUM_SEMANTIC_METHOD e_Method, boolean enable_title_search) {
+      ConfigParams params) {
     //TODO: 
     /* do we need to intersect with technical dictionary
      * do we need to score see also based on cross-reference/see also graph similarity (e.g., no of common titles in the see also graph)
@@ -609,24 +597,24 @@ public class SemanticSearchHandler extends SearchHandler
       IndexReader indexReader = DirectoryReader.open(FSDirectory.open(new File(indexPath)));
       IndexSearcher searcher = new IndexSearcher(indexReader);
       Analyzer stdAnalyzer = new StandardAnalyzer();
-      QueryParser parser = new QueryParser(hidden_wiki_search_field, stdAnalyzer);
+      QueryParser parser = new QueryParser(params.hidden_wiki_search_field, stdAnalyzer);
       Query query = null;
       try {
         
         parser.setAllowLeadingWildcard(true);
-        String queryString = "padded_length:["+String.format("%09d", hidden_min_wiki_length)+" TO *]";
-        if(enable_title_search) {
-          queryString += " AND (title:"+concept+" OR "+hidden_wiki_search_field+":"+concept+")";
+        String queryString = "padded_length:["+String.format("%09d", params.hidden_min_wiki_length)+" TO *]";
+        if(params.enable_title_search) {
+          queryString += " AND (title:"+concept+" OR "+params.hidden_wiki_search_field+":"+concept+")";
         }
         else {
-          queryString += " AND ("+hidden_wiki_search_field+":"+concept+")";
+          queryString += " AND ("+params.hidden_wiki_search_field+":"+concept+")";
         }
         query = parser.parse(queryString);
       } catch (ParseException e) {
         // TODO Auto-generated catch block
         e.printStackTrace();
       } //
-      TopDocs topDocs = searcher.search(query, max_hits);
+      TopDocs topDocs = searcher.search(query, params.hidden_max_hits);
       if(topDocs.totalHits > 0) {
         ScoreDoc[] hits = topDocs.scoreDocs;
         int cur_id = 1;
@@ -660,8 +648,8 @@ public class SemanticSearchHandler extends SearchHandler
                   cur_parent_id = cur_id;
                   
                   // get its associations
-                  if(e_Method!=ENUM_SEMANTIC_METHOD.e_ESA && 
-                      e_Method!=ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS) {
+                  if(params.e_Method!=ENUM_SEMANTIC_METHOD.e_ESA && 
+                      params.e_Method!=ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS) {
                     Integer I = titleIntMapping.get(f.stringValue());
                     if(I!=null) {
                       cachedAssoInfo = cachedAssociationsInfo.get(I);
@@ -681,22 +669,22 @@ public class SemanticSearchHandler extends SearchHandler
                 sem.weight = sem.weight>hits[i].score?sem.weight:hits[i].score;
               }
               relatedConcepts.put(sem.name, sem);
-              if(e_Method==ENUM_SEMANTIC_METHOD.e_UNKNOWN || 
-                  (e_Method!=ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS && 
-                  e_Method!=ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO && 
-                  e_Method!=ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO_ASSO)) // only one title is retrieved, we don't use anchors
+              if(params.e_Method==ENUM_SEMANTIC_METHOD.e_UNKNOWN || 
+                  (params.e_Method!=ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS && 
+                      params.e_Method!=ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO && 
+                          params.e_Method!=ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO_ASSO)) // only one title is retrieved, we don't use anchors
                 break;
             }
             else
               System.out.println(f.stringValue()+"...title not relevant!");
           }  
           //System.out.println();
-          if(hidden_relax_see_also==false || relevant) {
+          if(params.hidden_relax_see_also==false || relevant) {
             // force see also is enabled OR,
             // the original title or one of its anchors is relevant
             // in this case we can add its see_also
-            if(e_Method==ENUM_SEMANTIC_METHOD.e_ESA_SEE_ALSO || 
-                e_Method==ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO) { // add See also to the hit list
+            if(params.e_Method==ENUM_SEMANTIC_METHOD.e_ESA_SEE_ALSO || 
+                params.e_Method==ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO) { // add See also to the hit list
               
               IndexableField[] multiSeeAlso = indexReader.document(hits[i].doc).getFields("see_also");
               IndexableField[] multiSeeAlsoNE = indexReader.document(hits[i].doc).getFields("see_also_ne");
@@ -732,7 +720,7 @@ public class SemanticSearchHandler extends SearchHandler
                       else
                         System.out.println(multiSeeAlso[s].stringValue()+"...see_also not in mappings!");
                     }
-                    if(asso_cnt==0 || asso_cnt>=hidden_min_asso_cnt) { // support > minimum support
+                    if(asso_cnt==0 || asso_cnt>=params.hidden_min_asso_cnt) { // support > minimum support
                       sem = new SemanticConcept(multiSeeAlso[s].stringValue(), 
                           cachedInfo, multiSeeAlsoNE[s].stringValue(), 
                           hits[i].score, cur_id, cur_parent_id, asso_cnt, ENUM_CONCEPT_TYPE.e_SEE_ALSO);
@@ -751,8 +739,8 @@ public class SemanticSearchHandler extends SearchHandler
                 //System.out.println();
               }              
             }
-            else if(e_Method==ENUM_SEMANTIC_METHOD.e_ESA_SEE_ALSO_ASSO || 
-                e_Method==ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO_ASSO) { // add see also using association mining
+            else if(params.e_Method==ENUM_SEMANTIC_METHOD.e_ESA_SEE_ALSO_ASSO || 
+                params.e_Method==ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO_ASSO) { // add see also using association mining
               Integer key = titleIntMapping.get(indexReader.document(hits[i].doc).getFields("title")[0].stringValue());
               CachedAssociationInfo assoInfo = cachedAssociationsInfo.get(key);
               if(assoInfo==null) {
@@ -761,7 +749,7 @@ public class SemanticSearchHandler extends SearchHandler
               else {
                 for(int a=0; a<assoInfo.associations.size(); a++) {
                   Integer[] assos = assoInfo.associations.get(a);
-                  if(assos[1]>=hidden_min_asso_cnt) // support > minimum support
+                  if(assos[1]>=params.hidden_min_asso_cnt) // support > minimum support
                   {
                     String assoStr = titleStrMapping.get(assos[0]);
                     
@@ -813,18 +801,19 @@ public class SemanticSearchHandler extends SearchHandler
    * remove concepts that are irrelevant (only 1-2-3 word phrases are allowed)
    * @param relatedConcepts related concepts to be filtered
    */
-  protected void filterRelatedConcepts(HashMap<String,SemanticConcept> relatedConcepts) {
+  protected void filterRelatedConcepts(HashMap<String,SemanticConcept> relatedConcepts, 
+      ConfigParams params) {
     ArrayList<String> toRemove = new ArrayList<String>();
     for (SemanticConcept concept : relatedConcepts.values()) {
-      if(isRelevantConcept(concept.name)==false) {
+      if(isRelevantConcept(params.hidden_relax_listof,params.hidden_relax_disambig,params.hidden_max_title_ngrams,concept.name)==false) {
         System.out.println(concept.name+"("+concept.id+")...Removed!");
         toRemove.add(concept.name);
       }
-      else if(hidden_relax_ner==false && ArrayUtils.contains(new String[]{"P","L","O"},concept.ner)) { // check if not allowed NE
+      else if(params.hidden_relax_ner==false && ArrayUtils.contains(new String[]{"P","L","O"},concept.ner)) { // check if not allowed NE
         System.out.println(concept.name+"("+concept.id+")...Removed (NER)!");
         toRemove.add(concept.name);
       }
-      else if(hidden_relax_categories==false) { // check if not allowed category
+      else if(params.hidden_relax_categories==false) { // check if not allowed category
         for(int i=0; i<concept.cachedInfo.category.length; i++) {
           String c = concept.cachedInfo.category[i].toLowerCase();
           if(c.contains("companies") || 
@@ -854,7 +843,8 @@ public class SemanticSearchHandler extends SearchHandler
    * remove concepts that are irrelevant (only 1-2-3 word phrases are allowed)
    * @param concept concept to be evaluated
    */
-  protected boolean isRelevantConcept(String concept) {
+  protected boolean isRelevantConcept(boolean hidden_relax_listof, boolean hidden_relax_disambig,  
+      int hidden_max_title_ngrams, String concept) {
     //TODO: 
     /* handle list of: (List of solar powered products),(List of types of solar cells)
      * handle File: (File:Jason Robinson.jpg)
