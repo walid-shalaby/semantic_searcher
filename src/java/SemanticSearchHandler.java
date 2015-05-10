@@ -228,6 +228,8 @@ public class SemanticSearchHandler extends SearchHandler
     ENUM_SEMANTIC_METHOD e_Method = ENUM_SEMANTIC_METHOD.e_UNKNOWN;
     boolean enable_title_search = false;
     boolean measure_relatedness = false;
+    String experiment_in_path = "";
+    String experiment_out_path = "";
     
     // get method of semantic concepts retrievals
     String tmp = req.getParams().get("conceptsmethod");
@@ -245,6 +247,16 @@ public class SemanticSearchHandler extends SearchHandler
       hidden_relatedness_experiment = true;
     else
       hidden_relatedness_experiment = false;
+    
+    // get method of experiment input file
+    tmp = req.getParams().get("hexperin");
+    if(tmp!=null)
+      experiment_in_path = tmp;
+    
+    // get method of experiment input file
+    tmp = req.getParams().get("hexperout");
+    if(tmp!=null)
+      experiment_out_path = tmp;
     
     // get enable title search flag 
     tmp = req.getParams().get("titlesearch");
@@ -345,7 +357,8 @@ public class SemanticSearchHandler extends SearchHandler
             enable_title_search, req);
       }
       else {
-        semanticConceptsInfo = doSemanticRelatedness(concept, concepts_num, e_Method, enable_title_search);
+        semanticConceptsInfo = doSemanticRelatedness(concept, concepts_num, e_Method, 
+            enable_title_search, experiment_in_path, experiment_out_path);
         
         // clear search string
         ModifiableSolrParams params = new ModifiableSolrParams(req.getParams());
@@ -407,15 +420,16 @@ public class SemanticSearchHandler extends SearchHandler
   }
   
   protected NamedList<Object> doSemanticRelatedness(String searchConcepts, int concepts_num, 
-      ENUM_SEMANTIC_METHOD e_Method, boolean enable_title_search) {
+      ENUM_SEMANTIC_METHOD e_Method, boolean enable_title_search, 
+      String experiment_in_path, String experiment_out_path) {
     NamedList<Object> semanticConceptsInfo = null;
     
     if(hidden_relatedness_experiment==true) {
       // open concepts file and loop on concepts
       BufferedReader in;
       try {
-        in = new BufferedReader(new FileReader("./concepts.txt"));
-        FileWriter out = new FileWriter("./concepts-sim.txt");
+        in = new BufferedReader(new FileReader("./"+experiment_in_path));
+        FileWriter out = new FileWriter("./"+experiment_out_path);
         if(in!=null && out!=null) {        
           String line;        
           line = in.readLine();
@@ -432,6 +446,7 @@ public class SemanticSearchHandler extends SearchHandler
                 relatedConcepts1, relatedConcepts2);
             
             out.write(concepts[0]+","+concepts[1]+","+similarity+"\n");
+            out.flush();
             
             line = in.readLine();
             }
@@ -510,6 +525,23 @@ public class SemanticSearchHandler extends SearchHandler
     filterRelatedConcepts(relatedConcepts2);
     
     if(relatedConcepts1.size()>0 || relatedConcepts2.size()>0) {
+      // keep only required number of concepts
+      SemanticConcept[] sem = new SemanticConcept[relatedConcepts1.size()];
+      sem = (SemanticConcept[])relatedConcepts1.values().toArray(sem);
+      Arrays.sort(sem);
+      int keepSize = Math.min(concepts_num, relatedConcepts1.size());
+      relatedConcepts1.clear();
+      for(int i=0; i<keepSize; i++)
+        relatedConcepts1.put(sem[i].name, sem[i]);
+      
+      sem = new SemanticConcept[relatedConcepts2.size()];
+      sem = (SemanticConcept[])relatedConcepts2.values().toArray(sem);
+      Arrays.sort(sem);
+      keepSize = Math.min(concepts_num, relatedConcepts2.size());
+      relatedConcepts2.clear();
+      for(int i=0; i<keepSize; i++)
+        relatedConcepts2.put(sem[i].name, sem[i]);
+      
       ArrayList<SemanticConcept> toAdd = new ArrayList<SemanticConcept>(); 
       // add concepts appearing in concept 1 and not concept 2
       for(String s : relatedConcepts1.keySet()) {
@@ -624,12 +656,15 @@ public class SemanticSearchHandler extends SearchHandler
                   cur_parent_id = cur_id;
                   
                   // get its associations
-                  Integer I = titleIntMapping.get(f.stringValue());
-                  if(I!=null) {
-                    cachedAssoInfo = cachedAssociationsInfo.get(I);
+                  if(e_Method!=ENUM_SEMANTIC_METHOD.e_ESA && 
+                      e_Method!=ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS) {
+                    Integer I = titleIntMapping.get(f.stringValue());
+                    if(I!=null) {
+                      cachedAssoInfo = cachedAssociationsInfo.get(I);
+                    }
+                    else
+                      System.out.println(f.stringValue()+"...title not in mappings!");
                   }
-                  else
-                    System.out.println(f.stringValue()+"...title not in mappings!");
                 }
                 else { // anchor 
                   sem = new SemanticConcept(f.stringValue(), cachedInfo, ner, hits[i].score, 
