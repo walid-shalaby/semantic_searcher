@@ -186,6 +186,7 @@ class ConfigParams {
   public int hidden_max_title_ngrams = 3;
   public int concepts_num = 0;
   public String hidden_wiki_search_field = "text";
+  public String hidden_wiki_extra_query = "";
   public String experiment_in_path = "";
   public String experiment_out_path = "";
   
@@ -337,6 +338,12 @@ public class SemanticSearchHandler extends SearchHandler
     tmp = req.getParams().get("hwikifield");
     if(tmp!=null)
       params.hidden_wiki_search_field = tmp;
+    
+
+    // get wiki extra query
+    tmp = req.getParams().get("hwikiextraq");
+    if(tmp!=null)
+      params.hidden_wiki_extra_query = tmp;
     
     
     // get number of semantic concepts to retrieve 
@@ -609,6 +616,9 @@ public class SemanticSearchHandler extends SearchHandler
         else {
           queryString += " AND ("+params.hidden_wiki_search_field+":"+concept+")";
         }
+        if(params.hidden_wiki_extra_query.length()>0)
+          queryString += " "+ params.hidden_wiki_extra_query;
+        
         query = parser.parse(queryString);
       } catch (ParseException e) {
         // TODO Auto-generated catch block
@@ -994,4 +1004,3 @@ public class SemanticSearchHandler extends SearchHandler
     }    
   }
 }
-
