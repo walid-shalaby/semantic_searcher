@@ -665,63 +665,82 @@ public class SemanticSearchHandler extends SearchHandler
         int cur_parent_id = 0;
         for(int i = 0 ; i < hits.length; i++) {
           boolean relevant = false;
-          IndexableField multiTitles[] = indexReader.document(hits[i].doc).getFields("title");
+          IndexableField title = indexReader.document(hits[i].doc).getField("title");
           String ner = indexReader.document(hits[i].doc).getField("title_ne").stringValue();
           CachedConceptInfo cachedInfo = null;
           CachedAssociationInfo cachedAssoInfo = null;
-          for(int t=0; t<multiTitles.length; t++) {
-            IndexableField f = multiTitles[t];
-            //System.out.println(f.stringValue());
-            // check if relevant concept
-            boolean relevantTitle = true;//TODO: do we need to call isRelevantConcept(f.stringValue());
-            if(relevantTitle==true) {
-              relevant = true;
+          
+          //System.out.println(title.stringValue());
+          // check if relevant concept
+          boolean relevantTitle = true;//TODO: do we need to call isRelevantConcept(f.stringValue());
+          if(relevantTitle==true) {
+            relevant = true;
+            
+            // check if already there
+            SemanticConcept sem = relatedConcepts.get(title.stringValue());
+            if(sem==null) { // new concept              
+              cachedInfo = cachedConceptsInfo.get(title.stringValue());
+              if(cachedInfo==null) {
+                System.out.println(title.stringValue()+"...title not found!");
+                cachedInfo = new CachedConceptInfo(title.stringValue(), "", "");
+              }
               
-              // check if already there
-              SemanticConcept sem = relatedConcepts.get(f.stringValue());
-              if(sem==null) { // new concept
-                if(t==0) { // first title
-                  cachedInfo = cachedConceptsInfo.get(f.stringValue());
-                  if(cachedInfo==null) {
-                    System.out.println(f.stringValue()+"...title not found!");
-                    cachedInfo = new CachedConceptInfo(f.stringValue(), "", "");
-                  }
-                  
-                  sem = new SemanticConcept(f.stringValue(), cachedInfo, ner, hits[i].score,
-                      cur_id, 0, 0, ENUM_CONCEPT_TYPE.e_TITLE);
-                  cur_parent_id = cur_id;
-                  
-                  // get its associations
-                  if(params.e_Method!=ENUM_SEMANTIC_METHOD.e_ESA && 
-                      params.e_Method!=ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS) {
-                    Integer I = titleIntMapping.get(f.stringValue());
-                    if(I!=null) {
-                      cachedAssoInfo = cachedAssociationsInfo.get(I);
-                    }
-                    else
-                      System.out.println(f.stringValue()+"...title not in mappings!");
-                  }
+              sem = new SemanticConcept(title.stringValue(), cachedInfo, ner, hits[i].score,
+                  cur_id, 0, 0, ENUM_CONCEPT_TYPE.e_TITLE);
+              cur_parent_id = cur_id;
+              
+              // get its associations
+              if(params.e_Method!=ENUM_SEMANTIC_METHOD.e_ESA && 
+                  params.e_Method!=ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS) {
+                Integer I = titleIntMapping.get(title.stringValue());
+                if(I!=null) {
+                  cachedAssoInfo = cachedAssociationsInfo.get(I);
                 }
-                else { // anchor 
-                  sem = new SemanticConcept(f.stringValue(), cachedInfo, ner, hits[i].score, 
-                    cur_id, cur_parent_id, 0, ENUM_CONCEPT_TYPE.e_ANCHOR);
-                }
-                cur_id++;
-              }
-              else { // existing concept, update its weight to higher weight
-                cachedInfo = sem.cachedInfo;
-                sem.weight = sem.weight>hits[i].score?sem.weight:hits[i].score;
-              }
-              relatedConcepts.put(sem.name, sem);
-              if(params.e_Method==ENUM_SEMANTIC_METHOD.e_UNKNOWN || 
-                  (params.e_Method!=ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS && 
-                      params.e_Method!=ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO && 
-                          params.e_Method!=ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO_ASSO)) // only one title is retrieved, we don't use anchors
-                break;
+                else
+                  System.out.println(title.stringValue()+"...title not in mappings!");
+              }              
+              cur_id++;              
             }
-            else
-              System.out.println(f.stringValue()+"...title not relevant!");
-          }  
+            else { // existing concept, update its weight to higher weight
+              cachedInfo = sem.cachedInfo;
+              sem.weight = sem.weight>hits[i].score?sem.weight:hits[i].score;
+            }
+            relatedConcepts.put(sem.name, sem);            
+          }
+          else
+            System.out.println(title.stringValue()+"...title not relevant!");
+          if(relevant==true && (params.e_Method==ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS || 
+                  params.e_Method==ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO || 
+                      params.e_Method==ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO_ASSO)) // retrieve anchors
+          {
+            relevant = false;
+            IndexableField Anchors[] = indexReader.document(hits[i].doc).getFields("title_anchors");
+            for(int t=0; t<Anchors.length; t++) {
+              IndexableField f = Anchors[t];
+              //System.out.println(f.stringValue());
+              // check if relevant concept
+              relevantTitle = true;//TODO: do we need to call isRelevantConcept(f.stringValue());
+              if(relevantTitle==true) {
+                relevant = true;
+                
+                // check if already there
+                SemanticConcept sem = relatedConcepts.get(f.stringValue());
+                if(sem==null) { // new concept                  
+                    sem = new SemanticConcept(f.stringValue(), cachedInfo, ner, hits[i].score, 
+                      cur_id, cur_parent_id, 0, ENUM_CONCEPT_TYPE.e_ANCHOR);
+                  cur_id++;
+                }
+                else { // existing concept, update its weight to higher weight
+                  cachedInfo = sem.cachedInfo;
+                  sem.weight = sem.weight>hits[i].score?sem.weight:hits[i].score;
+                }
+                relatedConcepts.put(sem.name, sem);                
+              }
+              else
+                System.out.println(f.stringValue()+"...title not relevant!");
+            }
+          }
+          
           //System.out.println();
           if(params.hidden_relax_see_also==false || relevant) {
             // force see also is enabled OR,
@@ -737,7 +756,7 @@ public class SemanticSearchHandler extends SearchHandler
               for(int s=0; s<multiSeeAlso.length; s++) {
                 //System.out.println(f.stringValue());
                 // check if relevant concept
-                boolean relevantTitle = true; //TODO: do we need to call isRelevantConcept(multiSeeAlso[s].stringValue());
+                relevantTitle = true; //TODO: do we need to call isRelevantConcept(multiSeeAlso[s].stringValue());
                 /*String re = "\\S+(\\s\\S+){0,"+String.valueOf(params.hidden_max_seealso_ngrams-1)+"}";
                 if(multiSeeAlso[s].stringValue().toLowerCase().matches(re)==false)
                   relevantTitle = false;
@@ -806,7 +825,7 @@ public class SemanticSearchHandler extends SearchHandler
                     String assoStr = titleStrMapping.get(assos[0]);
                     
                     // check if relevant concept
-                    boolean relevantTitle = true; //TODO: do we need to call isRelevantConcept(multiSeeAlso[s].stringValue());
+                    relevantTitle = true; //TODO: do we need to call isRelevantConcept(multiSeeAlso[s].stringValue());
                     if(getTitleLength(assoStr)>params.hidden_max_seealso_ngrams)
                       relevantTitle = false;
                     if(relevantTitle==true) {
