@@ -63,6 +63,11 @@ enum ENUM_SEMANTIC_METHOD {
   e_ESA_ANCHORS_SEE_ALSO_ASSO
 }
 
+enum ENUM_DISTANCE_METRIC {
+  e_COSINE, 
+  e_COSINE_BIN,
+}
+
 enum ENUM_CONCEPT_TYPE {
   e_UNKNOWN, 
   e_TITLE,
@@ -169,6 +174,7 @@ class SemanticConcept implements Comparable<SemanticConcept> {
 
 class ConfigParams {
   public ENUM_SEMANTIC_METHOD e_Method = ENUM_SEMANTIC_METHOD.e_UNKNOWN;
+  public ENUM_DISTANCE_METRIC e_Distance = ENUM_DISTANCE_METRIC.e_COSINE;
   public boolean enable_title_search = false;
   public boolean measure_relatedness = false;
   public boolean hidden_relax_see_also = false;
@@ -184,6 +190,7 @@ class ConfigParams {
   public int hidden_min_wiki_length = 0;
   public int hidden_min_asso_cnt = 1;
   public int hidden_max_title_ngrams = 3;
+  public int hidden_max_seealso_ngrams = 3;
   public int concepts_num = 0;
   public String hidden_wiki_search_field = "text";
   public String hidden_wiki_extra_query = "";
@@ -253,6 +260,13 @@ public class SemanticSearchHandler extends SearchHandler
     tmp = req.getParams().get("hexperout");
     if(tmp!=null)
       params.experiment_out_path = tmp;
+    
+    // get distance metric method
+    tmp = req.getParams().get("hsim");
+    if(tmp!=null) {
+      if(tmp.compareToIgnoreCase("bin")==0)
+        params.e_Distance = ENUM_DISTANCE_METRIC.e_COSINE_BIN;
+    }
     
     // get enable title search flag 
     tmp = req.getParams().get("titlesearch");
@@ -333,6 +347,11 @@ public class SemanticSearchHandler extends SearchHandler
     tmp = req.getParams().get("hmaxngrams");
     if(tmp!=null)
       params.hidden_max_title_ngrams = Integer.parseInt(tmp);
+    
+    // get maximum seealso ngrams of wiki titles
+    tmp = req.getParams().get("hseealsomaxngrams");
+    if(tmp!=null)
+      params.hidden_max_seealso_ngrams = Integer.parseInt(tmp);
     
     // get wiki search field
     tmp = req.getParams().get("hwikifield");
@@ -541,44 +560,58 @@ public class SemanticSearchHandler extends SearchHandler
           j++;
       }
       
-      ArrayList<SemanticConcept> toAdd = new ArrayList<SemanticConcept>(); 
-      // add concepts appearing in concept 1 and not concept 2
-      for(String s : relatedConcepts1.keySet()) {
-        if(relatedConcepts2.get(s)==null) {
-          SemanticConcept c = new SemanticConcept(relatedConcepts1.get(s));
-          c.weight = 0;
-          toAdd.add(c);            
-        }
-      }
-      for(int i=0; i<toAdd.size(); i++)
-        relatedConcepts2.put(toAdd.get(i).name, toAdd.get(i));
-      
-      toAdd.clear();
-      
-      // add concepts appearing in concept 2 and not concept 1
-      for(String s : relatedConcepts2.keySet()) {
-        if(relatedConcepts1.get(s)==null) {
-          SemanticConcept c = new SemanticConcept(relatedConcepts2.get(s));
-          c.weight = 0;
-          toAdd.add(c);
-        }
-      }
-      for(int i=0; i<toAdd.size(); i++)
-        relatedConcepts1.put(toAdd.get(i).name, toAdd.get(i));
-      
-      toAdd.clear();
-      
-      // calculate cosine similarity
       double norm1=0, norm2=0, dot_product=0;
-      for(SemanticConcept c1 : relatedConcepts1.values()) {
-        SemanticConcept c2 = relatedConcepts2.get(c1.name);
-        dot_product += c1.weight*c2.weight;
-        norm1 += Math.pow(c1.weight, 2.0);
-        norm2 += Math.pow(c2.weight, 2.0);
+      if(params.e_Distance==ENUM_DISTANCE_METRIC.e_COSINE) {
+        // normalize both concepts vectors
+        ArrayList<SemanticConcept> toAdd = new ArrayList<SemanticConcept>(); 
+        // add concepts appearing in concept 1 and not concept 2
+        for(String s : relatedConcepts1.keySet()) {
+          if(relatedConcepts2.get(s)==null) {
+            SemanticConcept c = new SemanticConcept(relatedConcepts1.get(s));
+            c.weight = 0;
+            toAdd.add(c);            
+          }
+        }
+        for(int i=0; i<toAdd.size(); i++)
+          relatedConcepts2.put(toAdd.get(i).name, toAdd.get(i));
+        
+        toAdd.clear();
+        
+        // add concepts appearing in concept 2 and not concept 1
+        for(String s : relatedConcepts2.keySet()) {
+          if(relatedConcepts1.get(s)==null) {
+            SemanticConcept c = new SemanticConcept(relatedConcepts2.get(s));
+            c.weight = 0;
+            toAdd.add(c);
+          }
+        }
+        for(int i=0; i<toAdd.size(); i++)
+          relatedConcepts1.put(toAdd.get(i).name, toAdd.get(i));
+        
+        toAdd.clear();
+        
+        // calculate cosine similarity
+        for(SemanticConcept c1 : relatedConcepts1.values()) {
+          SemanticConcept c2 = relatedConcepts2.get(c1.name);
+          dot_product += c1.weight*c2.weight;
+          norm1 += Math.pow(c1.weight, 2.0);
+          norm2 += Math.pow(c2.weight, 2.0);
+        }
+        similarity = dot_product/(Math.sqrt(norm1)*Math.sqrt(norm2));
       }
-      similarity = dot_product/(Math.sqrt(norm1)*Math.sqrt(norm2));
+      else if(params.e_Distance==ENUM_DISTANCE_METRIC.e_COSINE_BIN) {
+        // calculate cosine similarity
+        for(SemanticConcept c1 : relatedConcepts1.values()) {
+          SemanticConcept c2 = relatedConcepts2.get(c1.name);
+          if(c2!=null) {
+            dot_product += 1;
+          }
+        }
+        norm1 = relatedConcepts1.size();
+        norm2 = relatedConcepts2.size();
+        similarity = dot_product/(Math.sqrt(norm1)*Math.sqrt(norm2));
+      }
     }
-    
     return similarity;
   }
   /*
@@ -609,7 +642,8 @@ public class SemanticSearchHandler extends SearchHandler
       try {
         
         parser.setAllowLeadingWildcard(true);
-        String queryString = "padded_length:["+String.format("%09d", params.hidden_min_wiki_length)+" TO *]";
+        String queryString = "title_length:[000 TO "+String.format("%03d", params.hidden_max_title_ngrams)+"] "
+            + "AND padded_length:["+String.format("%09d", params.hidden_min_wiki_length)+" TO *]";
         if(params.enable_title_search) {
           queryString += " AND (title:"+concept+" OR "+params.hidden_wiki_search_field+":"+concept+")";
         }
@@ -698,11 +732,19 @@ public class SemanticSearchHandler extends SearchHandler
               
               IndexableField[] multiSeeAlso = indexReader.document(hits[i].doc).getFields("see_also");
               IndexableField[] multiSeeAlsoNE = indexReader.document(hits[i].doc).getFields("see_also_ne");
+              IndexableField[] multiSeeAlsoLength = indexReader.document(hits[i].doc).getFields("seealso_length");              
             
               for(int s=0; s<multiSeeAlso.length; s++) {
                 //System.out.println(f.stringValue());
                 // check if relevant concept
                 boolean relevantTitle = true; //TODO: do we need to call isRelevantConcept(multiSeeAlso[s].stringValue());
+                /*String re = "\\S+(\\s\\S+){0,"+String.valueOf(params.hidden_max_seealso_ngrams-1)+"}";
+                if(multiSeeAlso[s].stringValue().toLowerCase().matches(re)==false)
+                  relevantTitle = false;
+                */
+                if(Integer.parseInt(multiSeeAlsoLength[s].stringValue())>params.hidden_max_seealso_ngrams)
+                  relevantTitle = false;
+                
                 if(relevantTitle==true) {
                   // check if already there
                   SemanticConcept sem = relatedConcepts.get(multiSeeAlso[s].stringValue()); 
@@ -734,7 +776,7 @@ public class SemanticSearchHandler extends SearchHandler
                       sem = new SemanticConcept(multiSeeAlso[s].stringValue(), 
                           cachedInfo, multiSeeAlsoNE[s].stringValue(), 
                           hits[i].score, cur_id, cur_parent_id, asso_cnt, ENUM_CONCEPT_TYPE.e_SEE_ALSO);
-                      cur_id++;
+                      cur_id++;                      
                     }
                   }
                   else { // existing concept, update its weight to higher weight
@@ -744,8 +786,8 @@ public class SemanticSearchHandler extends SearchHandler
                   if(sem!=null)
                     relatedConcepts.put(sem.name, sem);            
                 }
-                else
-                  System.out.println(multiSeeAlso[s].stringValue()+"...see-also not relevant!");
+                //else
+                  //System.out.println(multiSeeAlso[s].stringValue()+"...see-also not relevant!");
                 //System.out.println();
               }              
             }
@@ -765,6 +807,8 @@ public class SemanticSearchHandler extends SearchHandler
                     
                     // check if relevant concept
                     boolean relevantTitle = true; //TODO: do we need to call isRelevantConcept(multiSeeAlso[s].stringValue());
+                    if(getTitleLength(assoStr)>params.hidden_max_seealso_ngrams)
+                      relevantTitle = false;
                     if(relevantTitle==true) {
                       // check if already there
                       SemanticConcept sem = relatedConcepts.get(assoStr); 
@@ -786,11 +830,11 @@ public class SemanticSearchHandler extends SearchHandler
                       }
                       relatedConcepts.put(sem.name, sem);
                     }
-                    else
-                      System.out.println(assoStr+"...see-also not relevant!");
+                    //else
+                      //System.out.println(assoStr+"...see-also not relevant!");
                   }
-                  else
-                    System.out.println(assos[0]+"...see-also below threshold!");
+                  //else
+                    //System.out.println(assos[0]+"...see-also below threshold!");
                 }
               }
             }
@@ -807,6 +851,19 @@ public class SemanticSearchHandler extends SearchHandler
     }
   }
   
+  private int getTitleLength(String title) {
+      // TODO Auto-generated method stub
+      int index = title.length(), index1, index2;
+      if((index1=title.indexOf(','))==-1)
+          index1 = index;
+      if((index2=title.indexOf('('))==-1)
+          index2 = index;
+      
+      index = Math.min(index1, index2);
+      String s[] = title.substring(0,index).split(" ");
+      return s.length;    
+  }
+
   /*
    * remove concepts that are irrelevant (only 1-2-3 word phrases are allowed)
    * @param relatedConcepts related concepts to be filtered
@@ -862,18 +919,19 @@ public class SemanticSearchHandler extends SearchHandler
      * remove titles with (disambiguation)
      * keep only titles in technical dictionary
      */
-    String re = "\\S+(\\s\\S+){0,"+String.valueOf(hidden_max_title_ngrams-1)+"}";
     boolean relevant = true;
+    String re;
+    /*String re = "\\S+(\\s\\S+){0,"+String.valueOf(hidden_max_title_ngrams-1)+"}";
     if(concept.toLowerCase().matches(re)==false) {
       relevant = false;
-    }
-    if(hidden_relax_listof==false) {
+    }*/
+    if(relevant==true && hidden_relax_listof==false) {
       re = "list of.*";
       if(concept.toLowerCase().matches(re)==true) {
         relevant = false;
       }
     }
-    if(hidden_relax_disambig==false) {
+    if(relevant==true && hidden_relax_disambig==false) {
       re = ".*\\(disambiguation\\)";
       if(concept.toLowerCase().matches(re)==true) {
         relevant = false;
@@ -1004,4 +1062,3 @@ public class SemanticSearchHandler extends SearchHandler
     }    
   }
 }
-
