@@ -24,7 +24,10 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.Set;
 
 import org.apache.commons.lang.ArrayUtils;
 import org.apache.lucene.analysis.Analyzer;
@@ -66,6 +69,8 @@ enum ENUM_SEMANTIC_METHOD {
 enum ENUM_DISTANCE_METRIC {
   e_COSINE, 
   e_COSINE_BIN,
+  e_COSINE_NORM,  
+  e_WO
 }
 
 enum ENUM_CONCEPT_TYPE {
@@ -140,9 +145,9 @@ class SemanticConcept implements Comparable<SemanticConcept> {
   @Override
   public int compareTo(SemanticConcept o) {
     if (((SemanticConcept)o).weight>this.weight)
-      return 1;
-    else if (((SemanticConcept)o).weight<this.weight)
       return -1;
+    else if (((SemanticConcept)o).weight<this.weight)
+      return 1;
     else return 0;
     
   }
@@ -266,6 +271,10 @@ public class SemanticSearchHandler extends SearchHandler
     if(tmp!=null) {
       if(tmp.compareToIgnoreCase("bin")==0)
         params.e_Distance = ENUM_DISTANCE_METRIC.e_COSINE_BIN;
+      else if(tmp.compareToIgnoreCase("cosinenorm")==0)
+        params.e_Distance = ENUM_DISTANCE_METRIC.e_COSINE_NORM;
+      else if(tmp.compareToIgnoreCase("wo")==0)
+        params.e_Distance = ENUM_DISTANCE_METRIC.e_WO;
     }
     
     // get enable title search flag 
@@ -407,7 +416,7 @@ public class SemanticSearchHandler extends SearchHandler
       // sort concepts
       SemanticConcept sem[] = new SemanticConcept[relatedConcepts.size()];
       sem = (SemanticConcept[])relatedConcepts.values().toArray(sem);
-      Arrays.sort(sem);
+      Arrays.sort(sem, Collections.reverseOrder());
       
       // add concepts to query and to response
       String newQuery = concept;
@@ -457,10 +466,15 @@ public class SemanticSearchHandler extends SearchHandler
             HashMap<String,SemanticConcept> relatedConcepts1 = new HashMap<String,SemanticConcept>();
             HashMap<String,SemanticConcept> relatedConcepts2 = new HashMap<String,SemanticConcept>();
             
-            double similarity = getRelatedness(concepts[0], concepts[1], 
-                relatedConcepts1, relatedConcepts2, params);
-            
-            out.write(concepts[0]+","+concepts[1]+","+similarity+"\n");
+            out.write(concepts[0]);
+            for(int i=1; i<concepts.length; i++) {
+              double similarity = getRelatedness(concepts[0], concepts[i], 
+                  relatedConcepts1, relatedConcepts2, params);
+              
+              out.write(","+concepts[i]+","+similarity);
+              relatedConcepts2.clear();
+            }
+            out.write("\n");
             out.flush();
             
             line = in.readLine();
@@ -469,6 +483,7 @@ public class SemanticSearchHandler extends SearchHandler
           out.close();
         }
       } catch (IOException e) {
+        e.printStackTrace();
         throw new RuntimeException();
       }
     }
@@ -542,7 +557,7 @@ public class SemanticSearchHandler extends SearchHandler
       // keep only required number of concepts
       SemanticConcept[] sem = new SemanticConcept[relatedConcepts1.size()];
       sem = (SemanticConcept[])relatedConcepts1.values().toArray(sem);
-      Arrays.sort(sem);
+      Arrays.sort(sem, Collections.reverseOrder());
       relatedConcepts1.clear();
       for(int i=0,j=0; i<sem.length && j<params.concepts_num; i++) {
         relatedConcepts1.put(sem[i].name, sem[i]);
@@ -552,68 +567,149 @@ public class SemanticSearchHandler extends SearchHandler
       
       sem = new SemanticConcept[relatedConcepts2.size()];
       sem = (SemanticConcept[])relatedConcepts2.values().toArray(sem);
-      Arrays.sort(sem);
+      Arrays.sort(sem, Collections.reverseOrder());
       relatedConcepts2.clear();
       for(int i=0,j=0; i<sem.length && j<params.concepts_num; i++) {
         relatedConcepts2.put(sem[i].name, sem[i]);
         if(sem[i].e_concept_type==ENUM_CONCEPT_TYPE.e_TITLE)
           j++;
       }
-      
-      double norm1=0, norm2=0, dot_product=0;
-      if(params.e_Distance==ENUM_DISTANCE_METRIC.e_COSINE) {
-        // normalize both concepts vectors
-        ArrayList<SemanticConcept> toAdd = new ArrayList<SemanticConcept>(); 
-        // add concepts appearing in concept 1 and not concept 2
-        for(String s : relatedConcepts1.keySet()) {
-          if(relatedConcepts2.get(s)==null) {
-            SemanticConcept c = new SemanticConcept(relatedConcepts1.get(s));
-            c.weight = 0;
-            toAdd.add(c);            
-          }
-        }
-        for(int i=0; i<toAdd.size(); i++)
-          relatedConcepts2.put(toAdd.get(i).name, toAdd.get(i));
-        
-        toAdd.clear();
-        
-        // add concepts appearing in concept 2 and not concept 1
-        for(String s : relatedConcepts2.keySet()) {
-          if(relatedConcepts1.get(s)==null) {
-            SemanticConcept c = new SemanticConcept(relatedConcepts2.get(s));
-            c.weight = 0;
-            toAdd.add(c);
-          }
-        }
-        for(int i=0; i<toAdd.size(); i++)
-          relatedConcepts1.put(toAdd.get(i).name, toAdd.get(i));
-        
-        toAdd.clear();
-        
-        // calculate cosine similarity
-        for(SemanticConcept c1 : relatedConcepts1.values()) {
-          SemanticConcept c2 = relatedConcepts2.get(c1.name);
-          dot_product += c1.weight*c2.weight;
-          norm1 += Math.pow(c1.weight, 2.0);
-          norm2 += Math.pow(c2.weight, 2.0);
-        }
-        similarity = dot_product/(Math.sqrt(norm1)*Math.sqrt(norm2));
+      if(params.e_Distance==ENUM_DISTANCE_METRIC.e_COSINE || 
+          params.e_Distance==ENUM_DISTANCE_METRIC.e_COSINE_BIN || 
+          params.e_Distance==ENUM_DISTANCE_METRIC.e_COSINE_NORM) {
+        similarity = cosineSim(relatedConcepts1, relatedConcepts2, params);
       }
-      else if(params.e_Distance==ENUM_DISTANCE_METRIC.e_COSINE_BIN) {
-        // calculate cosine similarity
-        for(SemanticConcept c1 : relatedConcepts1.values()) {
-          SemanticConcept c2 = relatedConcepts2.get(c1.name);
-          if(c2!=null) {
-            dot_product += 1;
-          }
+      else if(params.e_Distance==ENUM_DISTANCE_METRIC.e_WO) {
+        try {
+          similarity = WeightedOverlapSim(relatedConcepts1, relatedConcepts2, params);
+        } catch (Exception e) {
+          e.printStackTrace();
         }
-        norm1 = relatedConcepts1.size();
-        norm2 = relatedConcepts2.size();
-        similarity = dot_product/(Math.sqrt(norm1)*Math.sqrt(norm2));
       }
     }
     return similarity;
   }
+  private double WeightedOverlapSim(
+      HashMap<String,SemanticConcept> relatedConcepts1,
+      HashMap<String,SemanticConcept> relatedConcepts2, ConfigParams params) throws Exception {
+    
+    // sort the two vectors by weight
+    SemanticConcept concepts1[] = new SemanticConcept[relatedConcepts1.size()];
+    concepts1 = (SemanticConcept[])relatedConcepts1.values().toArray(concepts1);
+    Arrays.sort(concepts1, Collections.reverseOrder());
+    
+    SemanticConcept concepts2[] = new SemanticConcept[relatedConcepts2.size()];
+    concepts2 = (SemanticConcept[])relatedConcepts2.values().toArray(concepts2);
+    Arrays.sort(concepts2, Collections.reverseOrder());
+    
+    // get overlap between two vectors
+    Set<String> overlap = relatedConcepts1.keySet();
+    overlap.retainAll(relatedConcepts2.keySet());
+    System.out.println("common concepts: ("+String.valueOf(overlap.size())+")");
+    
+    int[] ranks1 = new int[overlap.size()];
+    int[] ranks2 = new int[overlap.size()];
+    int pos = 0;
+    for(String s : overlap) {
+      // get rank in first vector
+      for(int i=0; i<concepts1.length; i++)
+        if(s.compareTo(concepts1[i].name)==0) {
+          ranks1[pos] = i+1;
+          break;
+        }
+      
+      // get rank in second vector
+      for(int i=0; i<concepts2.length; i++)
+        if(s.compareTo(concepts2[i].name)==0) {
+          ranks2[pos] = i+1;
+          break;
+        }
+      
+      pos++;
+    }
+    if(pos<overlap.size())
+      throw new Exception("overlap mismatch!");
+    
+    double num = 0.0, den = 0.0;
+    for(int i=0; i<ranks1.length; i++) {
+      num += 1.0/(ranks1[i]+ranks2[i]);
+      den += 1.0/(2*(Math.min(ranks1[i],ranks2[i])));
+    }
+    return (num/den); 
+  }
+
+  private double cosineSim(HashMap<String,SemanticConcept> relatedConcepts1, 
+      HashMap<String,SemanticConcept> relatedConcepts2, ConfigParams params) {
+    double similarity=0, norm1=0, norm2=0, dot_product=0;
+    if(params.e_Distance==ENUM_DISTANCE_METRIC.e_COSINE || 
+        params.e_Distance==ENUM_DISTANCE_METRIC.e_COSINE_NORM) {
+
+      if(params.e_Distance==ENUM_DISTANCE_METRIC.e_COSINE_NORM) { // normalize weights
+        float maxWeight = Collections.max(relatedConcepts1.values()).weight;
+        for(String s : relatedConcepts1.keySet()) {
+          SemanticConcept sem = relatedConcepts1.get(s);
+          sem.weight = sem.weight/maxWeight;
+        }
+         
+        maxWeight = Collections.max(relatedConcepts2.values()).weight;
+        for(String s : relatedConcepts2.keySet()) {
+          SemanticConcept sem = relatedConcepts2.get(s);
+          sem.weight = sem.weight/maxWeight;
+        }
+      }
+      
+      // normalize both concepts vectors
+      ArrayList<SemanticConcept> toAdd = new ArrayList<SemanticConcept>(); 
+      // add concepts appearing in concept 1 and not concept 2
+      for(String s : relatedConcepts1.keySet()) {
+        if(relatedConcepts2.get(s)==null) {
+          SemanticConcept c = new SemanticConcept(relatedConcepts1.get(s));
+          c.weight = 0;
+          toAdd.add(c);            
+        }
+      }
+      for(int i=0; i<toAdd.size(); i++)
+        relatedConcepts2.put(toAdd.get(i).name, toAdd.get(i));
+      
+      toAdd.clear();
+      
+      // add concepts appearing in concept 2 and not concept 1
+      for(String s : relatedConcepts2.keySet()) {
+        if(relatedConcepts1.get(s)==null) {
+          SemanticConcept c = new SemanticConcept(relatedConcepts2.get(s));
+          c.weight = 0;
+          toAdd.add(c);
+        }
+      }
+      for(int i=0; i<toAdd.size(); i++)
+        relatedConcepts1.put(toAdd.get(i).name, toAdd.get(i));
+      
+      toAdd.clear();
+      
+      // calculate cosine similarity
+      for(SemanticConcept c1 : relatedConcepts1.values()) {
+        SemanticConcept c2 = relatedConcepts2.get(c1.name);
+        dot_product += c1.weight*c2.weight;
+        norm1 += Math.pow(c1.weight, 2.0);
+        norm2 += Math.pow(c2.weight, 2.0);
+      }
+      similarity = dot_product/(Math.sqrt(norm1)*Math.sqrt(norm2));
+    }
+    else if(params.e_Distance==ENUM_DISTANCE_METRIC.e_COSINE_BIN) {
+      // calculate cosine similarity
+      for(SemanticConcept c1 : relatedConcepts1.values()) {
+        SemanticConcept c2 = relatedConcepts2.get(c1.name);
+        if(c2!=null) {
+          dot_product += 1;
+        }
+      }
+      norm1 = relatedConcepts1.size();
+      norm2 = relatedConcepts2.size();
+      similarity = dot_product/(Math.sqrt(norm1)*Math.sqrt(norm2));
+    }
+    return similarity;
+  }
+
   /*
    * @param concept source concept for which we search for related concepts
    * @param relatedConcepts related concepts retrieved
@@ -1066,7 +1162,10 @@ public class SemanticSearchHandler extends SearchHandler
             key = idx;
           }
           else { // add it to associations
-            associationInfo.addAssociation(idx,Integer.parseInt(association[1]));
+            if(association.length!=2)
+              System.out.println(line);                        
+            else
+              associationInfo.addAssociation(idx,Integer.parseInt(association[1]));
           }
         }
         if(associations.length>0)
@@ -1081,3 +1180,5 @@ public class SemanticSearchHandler extends SearchHandler
     }    
   }
 }
+
+
