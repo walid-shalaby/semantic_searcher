@@ -27,9 +27,11 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Set;
 
 import org.apache.commons.lang.ArrayUtils;
+import org.apache.commons.lang.StringEscapeUtils;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.index.DirectoryReader;
@@ -42,6 +44,10 @@ import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.store.FSDirectory;
+import org.apache.solr.client.solrj.impl.HttpSolrServer;
+import org.apache.solr.client.solrj.response.QueryResponse;
+import org.apache.solr.common.SolrDocument;
+import org.apache.solr.common.SolrDocumentList;
 import org.apache.solr.common.params.CommonParams;
 import org.apache.solr.common.params.ModifiableSolrParams;
 import org.apache.solr.common.util.NamedList;
@@ -49,6 +55,7 @@ import org.apache.solr.common.util.SimpleOrderedMap;
 import org.apache.solr.core.PluginInfo;
 import org.apache.solr.request.SolrQueryRequest;
 import org.apache.solr.response.SolrQueryResponse;
+import org.apache.solr.search.SyntaxError;
 
 /**
  *
@@ -58,18 +65,19 @@ import org.apache.solr.response.SolrQueryResponse;
 
 enum ENUM_SEMANTIC_METHOD {
   e_UNKNOWN, 
-  e_ESA,
-  e_ESA_ANCHORS,
-  e_ESA_SEE_ALSO,
-  e_ESA_SEE_ALSO_ASSO,
-  e_ESA_ANCHORS_SEE_ALSO, 
-  e_ESA_ANCHORS_SEE_ALSO_ASSO
+  e_MSA,
+  e_MSA_ANCHORS,
+  e_MSA_SEE_ALSO,
+  e_MSA_SEE_ALSO_ASSO,
+  e_MSA_ANCHORS_SEE_ALSO, 
+  e_MSA_ANCHORS_SEE_ALSO_ASSO
 }
 
 enum ENUM_DISTANCE_METRIC {
   e_COSINE, 
   e_COSINE_BIN,
-  e_COSINE_NORM,  
+  e_COSINE_NORM,
+  e_Eucleadian,
   e_WO
 }
 
@@ -81,13 +89,27 @@ enum ENUM_CONCEPT_TYPE {
   e_ASSOCIATION
 }
 
+enum ENUM_ANALYTIC_TYPE {
+  e_UNKNOWN, 
+  e_Search,
+  e_TECH_EXPLORE,
+  e_TECH_LANDSCAPE,
+  e_CI,
+  e_PRIOR,
+  e_RELATEDNESS
+}
+
 class CachedConceptInfo {
   public String[] category; // first two categories of the title 
-  
+  public String docno;
+  public int length;
+
   public CachedConceptInfo() {
   }
   
-  public CachedConceptInfo(String n, String cat1, String cat2) {
+  public CachedConceptInfo(String title, int len, String no, String cat1, String cat2) {
+    docno = no;
+    length = len;
     category = new String[2];
     category[0] = cat1;
     category[1] = cat2;
@@ -115,7 +137,8 @@ class SemanticConcept implements Comparable<SemanticConcept> {
   public int parent_id = 0;
   public int asso_cnt = 0;
   ENUM_CONCEPT_TYPE e_concept_type = ENUM_CONCEPT_TYPE.e_UNKNOWN;
-  
+  public int ignore = 0;
+    
   public SemanticConcept() {    
   }
   
@@ -144,12 +167,26 @@ class SemanticConcept implements Comparable<SemanticConcept> {
 
   @Override
   public int compareTo(SemanticConcept o) {
-    if (((SemanticConcept)o).weight>this.weight)
-      return -1;
-    else if (((SemanticConcept)o).weight<this.weight)
+    if (((SemanticConcept)o).weight<this.weight)
       return 1;
-    else return 0;
-    
+    else if (((SemanticConcept)o).weight>this.weight)
+      return -1;
+    else {
+       if (this.asso_cnt==0) {
+         if(((SemanticConcept)o).asso_cnt==0)
+           return 0;
+         else 
+           return 1;
+       }
+       else if (((SemanticConcept)o).asso_cnt==0)
+        return -1;
+      else if  (((SemanticConcept)o).asso_cnt<this.asso_cnt)
+        return 1;
+      else if (((SemanticConcept)o).asso_cnt>this.asso_cnt)
+        return -1;
+      else 
+        return 0;
+    }
   }
 
   public SimpleOrderedMap<Object> getInfo() {
@@ -159,6 +196,9 @@ class SemanticConcept implements Comparable<SemanticConcept> {
     conceptInfo.add("p_id", parent_id);
     conceptInfo.add("asso_cnt", asso_cnt);
     conceptInfo.add("type", getConceptTypeString(e_concept_type));
+    conceptInfo.add("docno", cachedInfo.docno);
+    conceptInfo.add("length", cachedInfo.length);
+    conceptInfo.add("ignore", ignore);
     
     return conceptInfo;
   }
@@ -178,29 +218,47 @@ class SemanticConcept implements Comparable<SemanticConcept> {
 }
 
 class ConfigParams {
-  public ENUM_SEMANTIC_METHOD e_Method = ENUM_SEMANTIC_METHOD.e_UNKNOWN;
+  public ENUM_SEMANTIC_METHOD e_Method = ENUM_SEMANTIC_METHOD.e_MSA_SEE_ALSO;
   public ENUM_DISTANCE_METRIC e_Distance = ENUM_DISTANCE_METRIC.e_COSINE;
+  public ENUM_ANALYTIC_TYPE e_analytic_type = ENUM_ANALYTIC_TYPE.e_UNKNOWN;
   public boolean enable_title_search = false;
+  public boolean enable_search_all = false;
+  public boolean enable_show_records = false;
+  public boolean enable_search_title = false;
+  public boolean enable_search_abstract = false;
+  public boolean enable_search_description = false;
+  public boolean enable_search_claims = false;
+  public boolean enable_extract_all = false;
+  public boolean enable_extract_title = false;
+  public boolean enable_extract_abstract = false;
+  public boolean enable_extract_description = false;
+  public boolean enable_extract_claims = false;
   public boolean measure_relatedness = false;
   public boolean hidden_relax_see_also = false;
   public boolean hidden_relax_ner = false;
   public boolean hidden_relax_categories = false;
-  public boolean hidden_display_wiki_hits = false;
-  public boolean hidden_relax_search = false;
+  public boolean hidden_relax_search = true;
+  public boolean hidden_include_q = false;
+  public boolean hidden_relax_cache = true;
   public boolean hidden_relax_disambig = false;
   public boolean hidden_relax_listof = false;
   public boolean hidden_relax_same_title = false;
   public boolean hidden_relatedness_experiment = false;
-  public int hidden_max_hits = 0;
+  public boolean abs_explicit = false;
+  public int hidden_max_hits = 1000;
   public int hidden_min_wiki_length = 0;
+  public int hidden_min_seealso_length = 0;
   public int hidden_min_asso_cnt = 1;
   public int hidden_max_title_ngrams = 3;
   public int hidden_max_seealso_ngrams = 3;
-  public int concepts_num = 0;
+  public int concepts_num = 10;
+  public int ci_patents_num = 10;
   public String hidden_wiki_search_field = "text";
-  public String hidden_wiki_extra_query = "";
+  public String hidden_wiki_extra_query = "AND NOT title:list* AND NOT title:index* AND NOT title:*disambiguation*";
   public String experiment_in_path = "";
   public String experiment_out_path = "";
+  public HashMap<String,ArrayList<String>> fqs = null;
+  public HashSet<String> ignored_concepts = null;
   
   public ConfigParams() {
     
@@ -216,6 +274,8 @@ public class SemanticSearchHandler extends SearchHandler
   
   private HashMap<Integer,CachedAssociationInfo> cachedAssociationsInfo = null;
   
+  IndexReader indexReader;
+  
   /* 
    *
    */
@@ -230,6 +290,14 @@ public class SemanticSearchHandler extends SearchHandler
     cacheConceptsInfo();
     //cachedConceptsInfo = new HashMap<String,CachedConceptInfo>();
     
+    // open the index
+    String indexPath = "./wiki_index";
+    try {
+      indexReader = DirectoryReader.open(FSDirectory.open(new File(indexPath)));
+    } catch (IOException e) {
+      e.printStackTrace();
+      throw new RuntimeException();
+    }
   }
 
   @Override
@@ -237,130 +305,725 @@ public class SemanticSearchHandler extends SearchHandler
   {
     NamedList<Object> semanticConceptsInfo = null;
     
-    ConfigParams params = new ConfigParams(); 
+    String escapedQ = StringEscapeUtils.escapeJavaScript(StringEscapeUtils.escapeHtml(req.getParams().get(CommonParams.Q)));
+    
+    if(escapedQ!=null && escapedQ.length()>0)
+    {
+      String tmp = req.getParams().get("analytic");
+      String tmp1 = StringEscapeUtils.escapeJavaScript(StringEscapeUtils.escapeHtml(req.getParams().get("q1")));
+      if(tmp!=null && tmp.length()>0 && tmp.compareToIgnoreCase("relatedness")==0 && tmp1!=null && tmp1.length()>0)
+        escapedQ += "___"+tmp1;
+        
+      // log concept to file
+      FileWriter f = new FileWriter("./msa_log/"+escapedQ.substring(0,escapedQ.length()>255?255:escapedQ.length()));
+      f.close();
+     
+      ConfigParams params = new ConfigParams(); 
+      
+      ModifiableSolrParams qparams = new ModifiableSolrParams(req.getParams());
+      
+      // parse request
+      ParseRequestParams(req, params, qparams);
+      
+      //req.setParams(qparams);
+      
+      //if(params.hidden_relax_search==false) {
+      //  super.handleRequestBody(req, rsp);
+      //}
+
+      if(params.e_analytic_type==ENUM_ANALYTIC_TYPE.e_Search) {
+        super.handleRequestBody(req, rsp);
+      }
+      else if(params.concepts_num>0 && 
+          (params.e_analytic_type==ENUM_ANALYTIC_TYPE.e_TECH_EXPLORE || 
+          params.e_analytic_type==ENUM_ANALYTIC_TYPE.e_TECH_LANDSCAPE || 
+          params.e_analytic_type==ENUM_ANALYTIC_TYPE.e_PRIOR)) {
+        String orgQ = req.getParams().get(CommonParams.Q);
+        semanticConceptsInfo = doSemanticSearch(orgQ, params);
+        if(params.e_analytic_type==ENUM_ANALYTIC_TYPE.e_TECH_EXPLORE) {
+          
+        }
+        if(params.e_analytic_type==ENUM_ANALYTIC_TYPE.e_TECH_LANDSCAPE) {
+          // construct new query with concepts added to it
+          String newQuery;
+          if(params.hidden_include_q==true)
+            newQuery = getNewQuery(req.getParams().get(CommonParams.Q), semanticConceptsInfo);
+          else
+            newQuery = getNewQuery("", semanticConceptsInfo);
+          
+          fillTechLandscapeQParams(newQuery, new String[]{"{!ex=fqs}class", "{!ex=fqs}class_year"}, params, qparams);
+          
+          req.setParams(qparams);
+          super.handleRequestBody(req, rsp);
+          qparams.set(CommonParams.Q, orgQ);
+          qparams.remove("fq");
+        }
+        if(params.e_analytic_type==ENUM_ANALYTIC_TYPE.e_PRIOR) {
+          // construct new query with concepts added to it
+          String newQuery;
+          if(params.hidden_include_q==true)
+            newQuery = getNewQuery(req.getParams().get(CommonParams.Q), semanticConceptsInfo);
+          else
+            newQuery = getNewQuery("", semanticConceptsInfo);
+          
+          qparams.set(CommonParams.Q, newQuery);
+          qparams.set("df", getQuerySearchFields(params));
+          
+          req.setParams(qparams);
+          super.handleRequestBody(req, rsp);
+          qparams.set(CommonParams.Q, orgQ);
+          qparams.remove("fq");
+        }
+      }
+      else if(params.e_analytic_type==ENUM_ANALYTIC_TYPE.e_CI) {
+        String orgQ = req.getParams().get(CommonParams.Q);
+        
+        // construct a new query of given assignee innovations and retrieve them
+        HttpSolrServer server = new HttpSolrServer("http://localhost:8990/solr/collection1/");
+        ModifiableSolrParams innoQParams = new ModifiableSolrParams();
+        innoQParams.set(CommonParams.Q, orgQ.toLowerCase());
+        innoQParams.set("defType","edismax");
+        innoQParams.set("df", "assignee");
+        innoQParams.set(CommonParams.ROWS, params.ci_patents_num);
+        innoQParams.set("sort", "publication_date desc");
+        
+        // add target extract field
+        String[] extractFields = getQueryExtractFields(params);
+        innoQParams.set("fl", extractFields);
+        QueryResponse innoQResp = server.query(innoQParams);
+        
+        // loop on results and construct a new query to explore technologies
+        SolrDocumentList results = innoQResp.getResults();
+        if(results!=null && results.size()>0) {
+          String techQ = "";
+          for(int i=0; i<results.size(); i++) {
+            SolrDocument doc = results.get(i);
+            for(String field : extractFields) {
+              techQ += (String)doc.getFieldValue(field) + " ";
+            }              
+          }
+          semanticConceptsInfo = doSemanticSearch(techQ, params);
+          System.out.println(techQ);
+          
+          // construct new query with concepts added to it
+          String newQuery;
+          if(params.hidden_include_q==true)
+            newQuery = getNewQuery(orgQ, semanticConceptsInfo);
+          else
+            newQuery = getNewQuery("", semanticConceptsInfo);
+                    
+          fillTechLandscapeQParams(newQuery, new String[]{"{!ex=fqs}class", "{!ex=fqs}class_year", "{!ex=fqs}assignee"}, params, qparams);         
+          
+          req.setParams(qparams);
+          super.handleRequestBody(req, rsp);
+          qparams.set(CommonParams.Q, orgQ);
+          qparams.remove("fq");
+        }
+      }
+      else if(params.e_analytic_type==ENUM_ANALYTIC_TYPE.e_RELATEDNESS) {
+        semanticConceptsInfo = doSemanticRelatedness(req.getParams().get(CommonParams.Q), 
+              req.getParams().get("q1"), params);
+        }
+
+      // clear search string
+      //if(params.hidden_relax_search==true || params.measure_relatedness==true)
+      //  qparams.set(CommonParams.ROWS, 0);
+      
+      // return back found semantic concepts in response
+      if(semanticConceptsInfo!=null)
+        rsp.getValues().add("semantic_concepts",semanticConceptsInfo);
+    }
+    
+  }
+  
+  private void fillTechLandscapeQParams(String newQuery, String[] facets, ConfigParams params,
+      ModifiableSolrParams qparams) {
+    qparams.set(CommonParams.Q, newQuery);
+    if(params.enable_show_records==false)
+      qparams.set(CommonParams.ROWS, 0);
+    qparams.set("facet", true);
+    qparams.set("facet.field", facets);
+    if(params.fqs!=null) {
+      for(String fq : params.fqs.keySet()) {
+        ArrayList<String> fqvalues = params.fqs.get(fq);
+        String values = fq+":"+fqvalues.get(0);
+        for(int i=1; i<fqvalues.size();i++) {
+          values += " OR "+fq+":"+fqvalues.get(i);
+        }
+        qparams.add("fq", "{!tag=fqs}"+values);
+      }
+    }
+    //qparams.set("facet.range", "publication_date");
+    //qparams.set("f.publication_date.facet.range.start", "1975-01-01T00:00:00Z/YEAR");
+    //qparams.set("f.publication_date.facet.range.end", "NOW/YEAR");
+    //qparams.set("f.publication_date.facet.range.gap", "+1YEAR");
+    
+    qparams.set("df", getQuerySearchFields(params));
+  }
+
+  private String getNewQuery(String org,
+      NamedList<Object> semanticConceptsInfo) {
+    String newQuery = org;
+    if(semanticConceptsInfo!=null){ 
+      for(int i=0; i<semanticConceptsInfo.size(); i++) {
+        SimpleOrderedMap<Object> obj = (SimpleOrderedMap<Object>)semanticConceptsInfo.getVal(i);
+        Integer ignore = (Integer)obj.get("ignore");
+         if(ignore.intValue()==0) { // shouldn't be ignored
+          if(newQuery.isEmpty())
+            newQuery = "\"" + semanticConceptsInfo.getName(i) + "\"";
+          else
+            newQuery += " OR \"" + semanticConceptsInfo.getName(i) + "\"";
+          }
+      }
+    }
+    return newQuery;
+  }
+
+  private String[] getQuerySearchFields(ConfigParams params) {
+    ArrayList<String> qf = new ArrayList<String>();
+    if(params.enable_search_all)
+      qf.add("text");
+    if(params.enable_search_title)
+      qf.add("title");
+    if(params.enable_search_abstract)
+      qf.add("abstract");
+    if(params.enable_search_description)
+      qf.add("description");
+    if(params.enable_search_claims)
+      qf.add("claims");
+    
+    return qf.toArray(new String[qf.size()]);
+  }
+
+  private String[] getQueryExtractFields(ConfigParams params) {
+    ArrayList<String> qf = new ArrayList<String>();
+    if(params.enable_extract_all)
+      qf.add("text");          
+    if(params.enable_extract_title)
+      qf.add("title");
+    if(params.enable_extract_abstract)
+      qf.add("abstract");
+    if(params.enable_extract_description)
+      qf.add("description");
+    if(params.enable_extract_claims)
+      qf.add("claims");
+    
+    return qf.toArray(new String[qf.size()]);
+  }
+
+  private void ParseRequestParams(SolrQueryRequest req, ConfigParams params,
+      ModifiableSolrParams qparams) throws SyntaxError {
+    
+    qparams.set(CommonParams.Q, req.getParams().get(CommonParams.Q));
     
     // get method of semantic concepts retrievals
     String tmp = req.getParams().get("conceptsmethod");
-    if(tmp!=null)
+    if(tmp!=null) {
       params.e_Method = getSemanticMethod(tmp);
-    
+      if(params.e_Method==ENUM_SEMANTIC_METHOD.e_UNKNOWN) {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (conceptsmethod)");
+      }
+    }
     // get measure relatedness flag 
     tmp = req.getParams().get("measure_relatedness");
-    if(tmp!=null && tmp.compareTo("on")==0)
-      params.measure_relatedness = true;
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.measure_relatedness = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (measure_relatedness)");
+      }
+    }
     
     // get semantic relatedness experiment flag 
     tmp = req.getParams().get("hrelatednessexpr");
-    if(tmp!=null && tmp.compareTo("y")==0)
-      params.hidden_relatedness_experiment = true;
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.hidden_relatedness_experiment = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (hrelatednessexpr)");
+      }
+    }
     else
       params.hidden_relatedness_experiment = false;
     
-    // get method of experiment input file
-    tmp = req.getParams().get("hexperin");
-    if(tmp!=null)
-      params.experiment_in_path = tmp;
-    
-    // get method of experiment input file
-    tmp = req.getParams().get("hexperout");
-    if(tmp!=null)
-      params.experiment_out_path = tmp;
-    
-    // get distance metric method
-    tmp = req.getParams().get("hsim");
-    if(tmp!=null) {
-      if(tmp.compareToIgnoreCase("bin")==0)
-        params.e_Distance = ENUM_DISTANCE_METRIC.e_COSINE_BIN;
-      else if(tmp.compareToIgnoreCase("cosinenorm")==0)
-        params.e_Distance = ENUM_DISTANCE_METRIC.e_COSINE_NORM;
-      else if(tmp.compareToIgnoreCase("wo")==0)
-        params.e_Distance = ENUM_DISTANCE_METRIC.e_WO;
-    }
-    
-    // get enable title search flag 
+ // get enable title search flag 
     tmp = req.getParams().get("titlesearch");
-    if(tmp!=null && tmp.compareTo("on")==0)
-      params.enable_title_search = true;
-    
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.enable_title_search = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (titlesearch)");
+      }
+    }
     // get force see also flag 
     tmp = req.getParams().get("hrelaxseealso");
-    if(tmp!=null && tmp.compareTo("y")==0)
-      params.hidden_relax_see_also = true;
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.hidden_relax_see_also = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (hrelaxseealso)");
+      }
+    }    
     else
       params.hidden_relax_see_also = false;
 
+    // get ignored concepts if any
+    String[] ignsem = req.getParams().getFieldParams(null, "ignsem");
+    if(ignsem!=null) {
+      params.ignored_concepts = new HashSet<String>();
+      for(String s : ignsem)
+      params.ignored_concepts.add(s);
+    }
+    
+    // get fqs if any
+    //params.fqs  = req.getParams().getFieldParams(null, "fqs");
+    String[] fqs = req.getParams().getFieldParams(null, "fqs");
+    if(fqs!=null) {
+      params.fqs = new HashMap<String,ArrayList<String>>();
+      
+      for(String fq : fqs) {
+        String[] fqToken = fq.split(":");
+        ArrayList<String> values = params.fqs.get(fqToken[0]);
+        if(values==null)
+          values = new ArrayList<String>();
+        
+        values.add(fqToken[1]);
+        params.fqs.put(fqToken[0], values);
+      }
+    }
+    
     // get relax NER flag 
     tmp = req.getParams().get("hrelaxner");
-    if(tmp!=null && tmp.compareTo("y")==0)
-      params.hidden_relax_ner = true;
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.hidden_relax_ner = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (hrelaxner)");
+      }
+    }
     else
       params.hidden_relax_ner = false;
     
     // get relax categories flag 
     tmp = req.getParams().get("hrelaxcategories");
-    if(tmp!=null && tmp.compareTo("y")==0)
-      params.hidden_relax_categories = true;
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.hidden_relax_categories = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (hrelaxcategories)");
+      }
+    }
     else
       params.hidden_relax_categories = false;
     
     // get relax search flag 
     tmp = req.getParams().get("hrelaxsearch");
-    if(tmp!=null && tmp.compareTo("y")==0)
-      params.hidden_relax_search = true;
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.hidden_relax_search = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (hrelaxsearch)");
+      }
+    }
     else
       params.hidden_relax_search = false;
 
+    // get absolute explicit concepts flag 
+    tmp = req.getParams().get("habsexplicit");
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.abs_explicit = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (habsexplicit)");
+      }
+    }
+    else
+      params.hidden_include_q = false;
+    
+    // get include q flag 
+    tmp = req.getParams().get("hincludeq");
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.hidden_include_q = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (hincludeq)");
+      }
+    }
+    else
+      params.hidden_include_q = false;
+
+    // get show records flag 
+    tmp = req.getParams().get("showrecords");
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.enable_show_records = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (showrecords)");
+      }
+    }
+    else
+      params.enable_show_records = false;
+
+    // get search all flag 
+    tmp = req.getParams().get("searchall");
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.enable_search_all = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (searchall)");
+      }
+    }
+    else
+      params.enable_search_all = false;
+
+    // get search title flag 
+    tmp = req.getParams().get("searchtitle");
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.enable_search_title = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (searchtitle)");
+      }
+    }
+    else
+      params.enable_search_title = false;
+
+    // get search abstract flag 
+    tmp = req.getParams().get("searchabstract");
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.enable_search_abstract = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (searchabstract)");
+      }
+    }
+    else
+      params.enable_search_abstract = false;
+    
+
+    // get search description flag 
+    tmp = req.getParams().get("searchdescription");
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.enable_search_description = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (searchdescription)");
+      }
+    }
+    else
+      params.enable_search_description = false;
+    
+    // get search claims flag 
+    tmp = req.getParams().get("searchclaims");
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.enable_search_claims = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (searchclaims)");
+      }
+    }
+    else
+      params.enable_search_claims = false;
+    
+    // get extract all flag 
+    tmp = req.getParams().get("extractall");
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.enable_extract_all = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (extractall)");
+      }
+    }
+    else
+      params.enable_extract_all = false;
+
+    // get extract title flag 
+    tmp = req.getParams().get("extracttitle");
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.enable_extract_title = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (extracttitle)");
+      }
+    }
+    else
+      params.enable_extract_title = false;
+
+    // get extract abstract flag 
+    tmp = req.getParams().get("extractabstract");
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.enable_extract_abstract = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (extractabstract)");
+      }
+    }
+    else
+      params.enable_extract_abstract = false;
+    
+
+    // get extract description flag 
+    tmp = req.getParams().get("extractdescription");
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.enable_extract_description = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (extractdescription)");
+      }
+    }
+    else
+      params.enable_extract_description = false;
+    
+    // get extract claims flag 
+    tmp = req.getParams().get("extractclaims");
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.enable_extract_claims = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (extractclaims)");
+      }
+    }
+    else
+      params.enable_extract_claims = false;
+    
+    // get relax caching flag 
+    tmp = req.getParams().get("hrelaxcache");
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.hidden_relax_cache = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (hrelaxcache)");
+      }
+    }
+    else
+      params.hidden_relax_cache = false;
+
     // get relax list of filter flag 
     tmp = req.getParams().get("hrelaxlistof");
-    if(tmp!=null && tmp.compareTo("y")==0)
-      params.hidden_relax_listof = true;
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.hidden_relax_listof = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (hrelaxlistof)");
+      }
+    }
     else
       params.hidden_relax_listof = false;
     
     // get relax same title flag 
     tmp = req.getParams().get("hrelaxsametitle");
-    if(tmp!=null && tmp.compareTo("y")==0)
-      params.hidden_relax_same_title = true;
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.hidden_relax_same_title = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (hrelaxsametitle)");
+      }
+    }
     else
       params.hidden_relax_same_title = false;
     
     // get relax disambiguation filter flag 
     tmp = req.getParams().get("hrelaxdisambig");
-    if(tmp!=null && tmp.compareTo("y")==0)
-      params.hidden_relax_disambig = true;
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.hidden_relax_disambig = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (hrelaxdisambig)");
+      }
+    }
     else
       params.hidden_relax_disambig = false;
     
+    // get method of experiment input file
+    tmp = req.getParams().get("hexperin");
+    if(tmp!=null && tmp.length()>0) {
+      params.experiment_in_path = StringEscapeUtils.escapeHtml(tmp);
+      qparams.set("hexperin", params.experiment_in_path);
+    }
+    // get method of experiment input file
+    tmp = req.getParams().get("hexperout");
+    if(tmp!=null && tmp.length()>0) {
+      params.experiment_out_path = StringEscapeUtils.escapeHtml(tmp);        
+      qparams.set("hexperout", params.experiment_out_path);
+    }
+    
+    // get distance metric method
+    tmp = req.getParams().get("hsim");
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareToIgnoreCase("cosine")==0)
+        params.e_Distance = ENUM_DISTANCE_METRIC.e_COSINE;
+      else if(tmp.compareToIgnoreCase("bin")==0)
+        params.e_Distance = ENUM_DISTANCE_METRIC.e_COSINE_BIN;
+      else if(tmp.compareToIgnoreCase("cosinenorm")==0)
+        params.e_Distance = ENUM_DISTANCE_METRIC.e_COSINE_NORM;
+      else if(tmp.compareToIgnoreCase("wo")==0)
+        params.e_Distance = ENUM_DISTANCE_METRIC.e_WO;
+      else if(tmp.compareToIgnoreCase("eucleadian")==0)
+        params.e_Distance = ENUM_DISTANCE_METRIC.e_Eucleadian;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (hsim)");
+      }
+    }
+    
+    // get analytic type
+    tmp = req.getParams().get("analytic");
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareToIgnoreCase("explore")==0)
+        params.e_analytic_type = ENUM_ANALYTIC_TYPE.e_TECH_EXPLORE;
+      else if(tmp.compareToIgnoreCase("landscape")==0)
+        params.e_analytic_type = ENUM_ANALYTIC_TYPE.e_TECH_LANDSCAPE;
+      else if(tmp.compareToIgnoreCase("competitive")==0)
+        params.e_analytic_type = ENUM_ANALYTIC_TYPE.e_CI;
+      else if(tmp.compareToIgnoreCase("prior")==0)
+        params.e_analytic_type = ENUM_ANALYTIC_TYPE.e_PRIOR;
+      else if(tmp.compareToIgnoreCase("relatedness")==0)
+        params.e_analytic_type = ENUM_ANALYTIC_TYPE.e_RELATEDNESS;
+      else if(tmp.compareToIgnoreCase("search")==0)
+        params.e_analytic_type = ENUM_ANALYTIC_TYPE.e_Search;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (analytic)");
+      }
+    }
+    
     // get maximum hits in initial wiki search
     tmp = req.getParams().get("hmaxhits");
-    if(tmp!=null)
-      params.hidden_max_hits = Integer.parseInt(tmp);
+    if(tmp!=null) {
+      if (tmp.matches("\\d+")){
+        params.hidden_max_hits = Integer.parseInt(tmp);
+      }
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (hmaxhits)");
+      }
+    }
     else
       params.hidden_max_hits = Integer.MAX_VALUE;
     
     // get maximum hits in initial wiki search
     tmp = req.getParams().get("hminassocnt");
-    if(tmp!=null)
-      params.hidden_min_asso_cnt = Integer.parseInt(tmp);
-    else
-      params.hidden_min_asso_cnt = 1;
+    if(tmp!=null) {
+      if (tmp.matches("\\d+")){
+        params.hidden_min_asso_cnt = Integer.parseInt(tmp);
+      }
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (hminassocnt)");
+      }
+    }
+//    else
+//      params.hidden_min_asso_cnt = 1;
     
     // get minimum wiki article length to search
     tmp = req.getParams().get("hminwikilen");
-    if(tmp!=null)
-      params.hidden_min_wiki_length = Integer.parseInt(tmp);
-    else
-      params.hidden_min_wiki_length = 0;
+    if(tmp!=null) {
+      if (tmp.matches("\\d+")){
+        params.hidden_min_wiki_length = Integer.parseInt(tmp);
+      }
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (hminwikilen)");
+      }      
+    }
+//    else
+//      params.hidden_min_wiki_length = 0;
+    
+    // get minimum seealso article length to search
+    tmp = req.getParams().get("hminseealsolen");
+    if(tmp!=null) {
+      if (tmp.matches("\\d+")){
+        params.hidden_min_seealso_length = Integer.parseInt(tmp);
+      }
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (hminseealsolen)");
+      }
+    }
+//    else
+//      params.hidden_min_seealso_length = 0;
     
     // get maximum ngrams of wiki titles
     tmp = req.getParams().get("hmaxngrams");
-    if(tmp!=null)
-      params.hidden_max_title_ngrams = Integer.parseInt(tmp);
+    if(tmp!=null) {
+      if (tmp.matches("\\d+")){
+        params.hidden_max_title_ngrams = Integer.parseInt(tmp);
+      }
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (hmaxngrams)");
+      }
+    }      
     
     // get maximum seealso ngrams of wiki titles
     tmp = req.getParams().get("hseealsomaxngrams");
-    if(tmp!=null)
-      params.hidden_max_seealso_ngrams = Integer.parseInt(tmp);
+    if(tmp!=null) {
+      if (tmp.matches("\\d+")){
+        params.hidden_max_seealso_ngrams = Integer.parseInt(tmp);
+      }
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (hseealsomaxngrams)");
+      }
+    }
     
     // get wiki search field
     tmp = req.getParams().get("hwikifield");
@@ -373,35 +1036,34 @@ public class SemanticSearchHandler extends SearchHandler
     if(tmp!=null)
       params.hidden_wiki_extra_query = tmp;
     
-    
-    // get number of semantic concepts to retrieve 
-    String concept = req.getParams().get(CommonParams.Q);
-    if (req.getParams().getInt("conceptsno")!=null){
-      params.concepts_num = req.getParams().getInt("conceptsno");
-    }
-    
-    if(params.concepts_num>0) {
-      if(params.measure_relatedness==false) {
-        semanticConceptsInfo = doSemanticSearch(concept, params, req);
+    // get number of CI patents to retrieve
+    tmp = req.getParams().get("patentsno");
+    if(tmp!=null) {
+      if (tmp.matches("\\d+")){
+        params.ci_patents_num = Integer.parseInt(tmp);
       }
       else {
-        semanticConceptsInfo = doSemanticRelatedness(concept, params);
-        
-        // clear search string
-        ModifiableSolrParams qparams = new ModifiableSolrParams(req.getParams());
-        qparams.set(CommonParams.Q, "");
-        req.setParams(qparams);
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (ci_patents_num)");
       }
     }
     
-    super.handleRequestBody(req, rsp);
-    
-    // return back found semantic concepts in response
-    rsp.getValues().add("semantic_concepts",semanticConceptsInfo);
+    // get number of semantic concepts to retrieve
+    tmp = req.getParams().get("conceptsno");
+    if(tmp!=null) {
+      if (tmp.matches("\\d+")){
+        params.concepts_num = Integer.parseInt(tmp);
+      }
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (conceptsno)");
+      }
+    }
   }
-  
-  protected NamedList<Object> doSemanticSearch(String concept, ConfigParams params,  
-      SolrQueryRequest req) {
+
+  protected NamedList<Object> doSemanticSearch(String concept, ConfigParams params) {
     NamedList<Object> semanticConceptsInfo = null;
     HashMap<String,SemanticConcept> relatedConcepts = null;
     
@@ -418,8 +1080,8 @@ public class SemanticSearchHandler extends SearchHandler
       sem = (SemanticConcept[])relatedConcepts.values().toArray(sem);
       Arrays.sort(sem, Collections.reverseOrder());
       
-      // add concepts to query and to response
-      String newQuery = concept;
+      // add concepts to response
+      
       semanticConceptsInfo = new SimpleOrderedMap<Object>();
       for(int i=0,j=0; i<params.concepts_num && i<sem.length; j++) {
         // remove a concept that exactly match original concept
@@ -427,26 +1089,27 @@ public class SemanticSearchHandler extends SearchHandler
           System.out.println(sem[j].name+"...Removed!");
           continue;
         }
-        newQuery += " OR \"" + sem[j].name + "\"";
-        
+        if(params.ignored_concepts!=null && params.ignored_concepts.contains(sem[j].name)) {
+          // set ignored flag
+          sem[j].ignore = 1;
+        }
         SimpleOrderedMap<Object> conceptInfo = sem[j].getInfo();
         //semanticConceptsInfo.add(sem[j].name, sem[j].weight);
         semanticConceptsInfo.add(sem[j].name, conceptInfo);
-        i++;
+        if(!params.abs_explicit || sem[j].e_concept_type==ENUM_CONCEPT_TYPE.e_TITLE)
+            i++;
       }
       
       // add related concepts to the query
-      ModifiableSolrParams qparams = new ModifiableSolrParams(req.getParams());
-      if(params.hidden_relax_search==false)
-        qparams.set(CommonParams.Q, newQuery);
-      else
-        qparams.set(CommonParams.Q, "");
-      req.setParams(qparams);
+      //if(params.hidden_relax_search==false)
+      //  qparams.set(CommonParams.Q, newQuery);
+      
+      //req.setParams(qparams);
     }
     return semanticConceptsInfo;
   }
   
-  protected NamedList<Object> doSemanticRelatedness(String searchConcepts, ConfigParams params) {
+  protected NamedList<Object> doSemanticRelatedness(String sentence1, String sentence2, ConfigParams params) {
     NamedList<Object> semanticConceptsInfo = null;
     
     if(params.hidden_relatedness_experiment==true) {
@@ -455,7 +1118,7 @@ public class SemanticSearchHandler extends SearchHandler
       try {
         in = new BufferedReader(new FileReader("./"+params.experiment_in_path));
         FileWriter out = new FileWriter("./"+params.experiment_out_path);
-        if(in!=null && out!=null) {        
+        if(in!=null && out!=null) {
           String line;        
           line = in.readLine();
           while(line!=null) {
@@ -488,19 +1151,22 @@ public class SemanticSearchHandler extends SearchHandler
       }
     }
     else {
-      String[] concepts = searchConcepts.split(",");
-      if(concepts.length==2) {
+      if(sentence1.length()>0 && sentence2.length()>0) {
         HashMap<String,SemanticConcept> relatedConcepts1 = new HashMap<String,SemanticConcept>();
         HashMap<String,SemanticConcept> relatedConcepts2 = new HashMap<String,SemanticConcept>();
         
-        double similarity = getRelatedness(concepts[0], concepts[1], 
+        double relatedness = getRelatedness(sentence1, sentence2, 
             relatedConcepts1, relatedConcepts2, params);
         
-        if(relatedConcepts1.size()>0 || relatedConcepts2.size()>0) {          
-          semanticConceptsInfo = new SimpleOrderedMap<Object>();
-          
-          semanticConceptsInfo.add("similarity", similarity);
+        semanticConceptsInfo = new SimpleOrderedMap<Object>();
         
+        System.out.println("score: "+relatedness);
+        relatedness = mapRelatednessScore(relatedness);        
+        
+        semanticConceptsInfo.add("relatedness", String.format("%.2f", relatedness));
+      
+        
+        if(relatedConcepts1.size()>0 || relatedConcepts2.size()>0) {          
           // add concepts related to concept 1 to response
           SimpleOrderedMap<Object> conceptInfo1 = new SimpleOrderedMap<Object>();
           int ind=0;
@@ -511,7 +1177,7 @@ public class SemanticSearchHandler extends SearchHandler
             if(ind==params.concepts_num || ind==relatedConcepts1.size())
               break;
           }
-          semanticConceptsInfo.add(concepts[0], conceptInfo1);
+          semanticConceptsInfo.add(sentence1, conceptInfo1);
           
           // add concepts related to concept 2 to response
           SimpleOrderedMap<Object> conceptInfo2 = new SimpleOrderedMap<Object>();
@@ -523,7 +1189,7 @@ public class SemanticSearchHandler extends SearchHandler
             if(ind==params.concepts_num || ind==relatedConcepts2.size())
               break;
           }
-          semanticConceptsInfo.add(concepts[1], conceptInfo2);
+          semanticConceptsInfo.add(sentence2, conceptInfo2);
         }
       }
       else { // invalid format (expected concept1,concept2)
@@ -533,11 +1199,44 @@ public class SemanticSearchHandler extends SearchHandler
     return semanticConceptsInfo;
   }
   
+  private double mapRelatednessScore(double score) {
+    double relatedness = score;
+    double max = 0;
+    double min = 0;
+    double rmin = 0;
+    double rmax = 0;
+    if(relatedness>=0.35) { // [3.5-4]
+      rmin = 0.35;
+      rmax = 1;
+      min = 3.5;
+      max = 4;
+    }
+    else if(relatedness>=0.2) { // [2-3.5]
+      rmin = 0.2;
+      rmax = 0.349999999;
+      min = 2;
+      max = 3.5;
+    }
+    else if(relatedness>=0.01) { // [1-2]
+      rmin = 0.01;
+      rmax = 0.1999999999;
+      min = 1;
+      max = 2;
+    }
+    else { // [0-1]
+      rmin = 0.0;
+      rmax = 0.00999999999;
+      min = 0;
+      max = 1;
+    }
+    return 1+min+(max-min)*(relatedness-rmin)/(rmax-rmin);
+  }
+
   protected double getRelatedness(String concept1, String concept2, 
       HashMap<String,SemanticConcept> relatedConcepts1, 
       HashMap<String,SemanticConcept> relatedConcepts2, 
       ConfigParams params) {
-    double similarity = Double.MAX_VALUE;
+    double similarity = 0;
     
     // retrieve related semantic concepts for concept 1
     System.out.println("Retrieving for concept: ("+concept1+")");
@@ -579,6 +1278,9 @@ public class SemanticSearchHandler extends SearchHandler
           params.e_Distance==ENUM_DISTANCE_METRIC.e_COSINE_NORM) {
         similarity = cosineSim(relatedConcepts1, relatedConcepts2, params);
       }
+      else if(params.e_Distance==ENUM_DISTANCE_METRIC.e_Eucleadian) {
+        similarity = 1.0/(1.0+eucleadianDist(relatedConcepts1, relatedConcepts2, params));        
+      }
       else if(params.e_Distance==ENUM_DISTANCE_METRIC.e_WO) {
         try {
           similarity = WeightedOverlapSim(relatedConcepts1, relatedConcepts2, params);
@@ -589,6 +1291,48 @@ public class SemanticSearchHandler extends SearchHandler
     }
     return similarity;
   }
+  private double eucleadianDist(
+      HashMap<String,SemanticConcept> relatedConcepts1,
+      HashMap<String,SemanticConcept> relatedConcepts2, ConfigParams params) {
+    double distance = 0;
+    // normalize both concepts vectors
+    ArrayList<SemanticConcept> toAdd = new ArrayList<SemanticConcept>(); 
+    // add concepts appearing in concept 1 and not concept 2
+    for(String s : relatedConcepts1.keySet()) {
+      if(relatedConcepts2.get(s)==null) {
+        SemanticConcept c = new SemanticConcept(relatedConcepts1.get(s));
+        c.weight = 0;
+        toAdd.add(c);            
+      }
+    }
+    for(int i=0; i<toAdd.size(); i++)
+      relatedConcepts2.put(toAdd.get(i).name, toAdd.get(i));
+    
+    toAdd.clear();
+    
+    // add concepts appearing in concept 2 and not concept 1
+    for(String s : relatedConcepts2.keySet()) {
+      if(relatedConcepts1.get(s)==null) {
+        SemanticConcept c = new SemanticConcept(relatedConcepts2.get(s));
+        c.weight = 0;
+        toAdd.add(c);
+      }
+    }
+    for(int i=0; i<toAdd.size(); i++)
+      relatedConcepts1.put(toAdd.get(i).name, toAdd.get(i));
+    
+    toAdd.clear();
+    
+    // calculate eucleadian similarity
+    for(SemanticConcept c1 : relatedConcepts1.values()) {
+      SemanticConcept c2 = relatedConcepts2.get(c1.name);
+      distance += Math.pow(c1.weight-c2.weight, 2.0);      
+    }
+    distance = Math.sqrt(distance);
+    
+    return distance;
+  }
+
   private double WeightedOverlapSim(
       HashMap<String,SemanticConcept> relatedConcepts1,
       HashMap<String,SemanticConcept> relatedConcepts2, ConfigParams params) throws Exception {
@@ -727,10 +1471,9 @@ public class SemanticSearchHandler extends SearchHandler
      * do we need to search in title too with boosting factor then remove exact match at the end
      * do we need to add "" here or in the request
      */
-    String indexPath = "./wiki_index";
+    concept = QueryParser.escape(concept.toLowerCase());
+    
     try {
-      // open the index
-      IndexReader indexReader = DirectoryReader.open(FSDirectory.open(new File(indexPath)));
       IndexSearcher searcher = new IndexSearcher(indexReader);
       Analyzer stdAnalyzer = new StandardAnalyzer();
       QueryParser parser = new QueryParser(params.hidden_wiki_search_field, stdAnalyzer);
@@ -770,44 +1513,46 @@ public class SemanticSearchHandler extends SearchHandler
           // check if relevant concept
           boolean relevantTitle = true;//TODO: do we need to call isRelevantConcept(f.stringValue());
           if(relevantTitle==true) {
-            relevant = true;
-            
+            relevant = true;            
             // check if already there
             SemanticConcept sem = relatedConcepts.get(title.stringValue());
             if(sem==null) { // new concept              
               cachedInfo = cachedConceptsInfo.get(title.stringValue());
               if(cachedInfo==null) {
                 System.out.println(title.stringValue()+"...title not found!");
-                cachedInfo = new CachedConceptInfo(title.stringValue(), "", "");
+                if(params.hidden_relax_cache==true)
+                  cachedInfo = new CachedConceptInfo(title.stringValue(), 0, "", "", "");
               }
-              
-              sem = new SemanticConcept(title.stringValue(), cachedInfo, ner, hits[i].score,
-                  cur_id, 0, 0, ENUM_CONCEPT_TYPE.e_TITLE);
-              cur_parent_id = cur_id;
-              
-              // get its associations
-              if(params.e_Method!=ENUM_SEMANTIC_METHOD.e_ESA && 
-                  params.e_Method!=ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS) {
-                Integer I = titleIntMapping.get(title.stringValue());
-                if(I!=null) {
-                  cachedAssoInfo = cachedAssociationsInfo.get(I);
-                }
-                else
-                  System.out.println(title.stringValue()+"...title not in mappings!");
-              }              
-              cur_id++;              
+              if(cachedInfo!=null) {
+                sem = new SemanticConcept(title.stringValue(), cachedInfo, ner, hits[i].score,
+                    cur_id, 0, 0, ENUM_CONCEPT_TYPE.e_TITLE);
+                cur_parent_id = cur_id;
+                cur_id++;
+                // get its associations
+                if(params.e_Method!=ENUM_SEMANTIC_METHOD.e_MSA && 
+                    params.e_Method!=ENUM_SEMANTIC_METHOD.e_MSA_ANCHORS) {
+                  Integer I = titleIntMapping.get(title.stringValue());
+                  if(I!=null) {
+                    cachedAssoInfo = cachedAssociationsInfo.get(I);
+                  }
+                  else
+                    System.out.println(title.stringValue()+"...title not in mappings!");
+                }                              
+              }
             }
             else { // existing concept, update its weight to higher weight
               cachedInfo = sem.cachedInfo;
               sem.weight = sem.weight>hits[i].score?sem.weight:hits[i].score;
+              cur_parent_id = sem.id;
             }
-            relatedConcepts.put(sem.name, sem);            
+            if(sem!=null)
+              relatedConcepts.put(sem.name, sem);            
           }
           else
             System.out.println(title.stringValue()+"...title not relevant!");
-          if(relevant==true && (params.e_Method==ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS || 
-                  params.e_Method==ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO || 
-                      params.e_Method==ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO_ASSO)) // retrieve anchors
+          if(relevant==true && (params.e_Method==ENUM_SEMANTIC_METHOD.e_MSA_ANCHORS || 
+                  params.e_Method==ENUM_SEMANTIC_METHOD.e_MSA_ANCHORS_SEE_ALSO || 
+                      params.e_Method==ENUM_SEMANTIC_METHOD.e_MSA_ANCHORS_SEE_ALSO_ASSO)) // retrieve anchors
           {
             relevant = false;
             IndexableField Anchors[] = indexReader.document(hits[i].doc).getFields("title_anchors");
@@ -822,15 +1567,16 @@ public class SemanticSearchHandler extends SearchHandler
                 // check if already there
                 SemanticConcept sem = relatedConcepts.get(f.stringValue());
                 if(sem==null) { // new concept                  
-                    sem = new SemanticConcept(f.stringValue(), cachedInfo, ner, hits[i].score, 
+                    sem = new SemanticConcept(f.stringValue(), cachedInfo, ner, hits[i].score-0.0001f, 
                       cur_id, cur_parent_id, 0, ENUM_CONCEPT_TYPE.e_ANCHOR);
                   cur_id++;
                 }
                 else { // existing concept, update its weight to higher weight
                   cachedInfo = sem.cachedInfo;
-                  sem.weight = sem.weight>hits[i].score?sem.weight:hits[i].score;
+                  sem.weight = sem.weight>hits[i].score-0.0001f?sem.weight:hits[i].score-0.0001f;
                 }
-                relatedConcepts.put(sem.name, sem);                
+                if(sem!=null)
+                  relatedConcepts.put(sem.name, sem);                
               }
               else
                 System.out.println(f.stringValue()+"...title not relevant!");
@@ -842,8 +1588,8 @@ public class SemanticSearchHandler extends SearchHandler
             // force see also is enabled OR,
             // the original title or one of its anchors is relevant
             // in this case we can add its see_also
-            if(params.e_Method==ENUM_SEMANTIC_METHOD.e_ESA_SEE_ALSO || 
-                params.e_Method==ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO) { // add See also to the hit list
+            if(params.e_Method==ENUM_SEMANTIC_METHOD.e_MSA_SEE_ALSO || 
+                params.e_Method==ENUM_SEMANTIC_METHOD.e_MSA_ANCHORS_SEE_ALSO) { // add See also to the hit list
               
               IndexableField[] multiSeeAlso = indexReader.document(hits[i].doc).getFields("see_also");
               IndexableField[] multiSeeAlsoNE = indexReader.document(hits[i].doc).getFields("see_also_ne");
@@ -867,36 +1613,39 @@ public class SemanticSearchHandler extends SearchHandler
                     cachedInfo = cachedConceptsInfo.get(multiSeeAlso[s].stringValue());
                     if(cachedInfo==null) {
                       System.out.println(multiSeeAlso[s].stringValue()+"...see_also not found!");
-                      cachedInfo = new CachedConceptInfo(multiSeeAlso[s].stringValue(), "", "");
-                    }
-                    
-                    // get see also association info
-                    int asso_cnt = 0;
-                    if(cachedAssoInfo!=null) {
-                      Integer I = titleIntMapping.get(multiSeeAlso[s].stringValue());
-                      if(I!=null) {
-                        for(Integer[] info :cachedAssoInfo.associations) {
-                          if(info[0].intValue()==I.intValue()) {
-                            asso_cnt = info[1].intValue();
-                            break;
+                      if(params.hidden_relax_cache==true)
+                        cachedInfo = new CachedConceptInfo(multiSeeAlso[s].stringValue(), 0, "", "", "");
+                    } 
+                    if(cachedInfo!=null) {  
+                      // get see also association info
+                      int asso_cnt = 0;
+                      if(cachedAssoInfo!=null) {
+                        Integer I = titleIntMapping.get(multiSeeAlso[s].stringValue());
+                        if(I!=null) {
+                          for(Integer[] info :cachedAssoInfo.associations) {
+                            if(info[0].intValue()==I.intValue()) {
+                              asso_cnt = info[1].intValue();
+                              break;
+                            }
                           }
+                          if(asso_cnt==0)
+                            System.out.println(multiSeeAlso[s].stringValue()+"...see_also not in associations!");
                         }
-                        if(asso_cnt==0)
-                          System.out.println(multiSeeAlso[s].stringValue()+"...see_also not in associations!");
+                        else
+                          System.out.println(multiSeeAlso[s].stringValue()+"...see_also not in mappings!");
                       }
-                      else
-                        System.out.println(multiSeeAlso[s].stringValue()+"...see_also not in mappings!");
-                    }
-                    if(asso_cnt==0 || asso_cnt>=params.hidden_min_asso_cnt) { // support > minimum support
-                      sem = new SemanticConcept(multiSeeAlso[s].stringValue(), 
-                          cachedInfo, multiSeeAlsoNE[s].stringValue(), 
-                          hits[i].score, cur_id, cur_parent_id, asso_cnt, ENUM_CONCEPT_TYPE.e_SEE_ALSO);
-                      cur_id++;                      
+                      if((cachedInfo.length==0 || cachedInfo.length>=params.hidden_min_seealso_length) && 
+                          (asso_cnt==0 || asso_cnt>=params.hidden_min_asso_cnt)) { // support > minimum support
+                        sem = new SemanticConcept(multiSeeAlso[s].stringValue(), 
+                            cachedInfo, multiSeeAlsoNE[s].stringValue(), 
+                            hits[i].score-0.0002f, cur_id, cur_parent_id, asso_cnt, ENUM_CONCEPT_TYPE.e_SEE_ALSO);
+                        cur_id++;                      
+                      }
                     }
                   }
                   else { // existing concept, update its weight to higher weight
                     cachedInfo = sem.cachedInfo;
-                    sem.weight = sem.weight>hits[i].score?sem.weight:hits[i].score;
+                    sem.weight = sem.weight>hits[i].score-0.0002f?sem.weight:hits[i].score-0.0002f;
                   }
                   if(sem!=null)
                     relatedConcepts.put(sem.name, sem);            
@@ -906,8 +1655,8 @@ public class SemanticSearchHandler extends SearchHandler
                 //System.out.println();
               }              
             }
-            else if(params.e_Method==ENUM_SEMANTIC_METHOD.e_ESA_SEE_ALSO_ASSO || 
-                params.e_Method==ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO_ASSO) { // add see also using association mining
+            else if(params.e_Method==ENUM_SEMANTIC_METHOD.e_MSA_SEE_ALSO_ASSO || 
+                params.e_Method==ENUM_SEMANTIC_METHOD.e_MSA_ANCHORS_SEE_ALSO_ASSO) { // add see also using association mining
               Integer key = titleIntMapping.get(indexReader.document(hits[i].doc).getFields("title")[0].stringValue());
               CachedAssociationInfo assoInfo = cachedAssociationsInfo.get(key);
               if(assoInfo==null) {
@@ -931,19 +1680,26 @@ public class SemanticSearchHandler extends SearchHandler
                         cachedInfo = cachedConceptsInfo.get(assoStr);
                         if(cachedInfo==null) {
                           System.out.println(assoStr+"...see_also not found!");
-                          cachedInfo = new CachedConceptInfo(assoStr, "", "");
+                          if(params.hidden_relax_cache==true)
+                            cachedInfo = new CachedConceptInfo(assoStr, 0, "", "", "");
                         }
-                        
-                        sem = new SemanticConcept(assoStr, 
-                            cachedInfo, "M", 
-                            hits[i].score, cur_id, cur_parent_id, assos[1], ENUM_CONCEPT_TYPE.e_SEE_ALSO);
-                        cur_id++;
+                        if(cachedInfo!=null)
+                        {  
+                          if(cachedInfo.length==0 || cachedInfo.length>=params.hidden_min_seealso_length) { 
+                              sem = new SemanticConcept(assoStr, 
+                          
+                                cachedInfo, "M", 
+                              hits[i].score-0.0002f, cur_id, cur_parent_id, assos[1], ENUM_CONCEPT_TYPE.e_SEE_ALSO);
+                            cur_id++;
+                          }
+                        }
                       }
                       else { // existing concept, update its weight to higher weight
                         cachedInfo = sem.cachedInfo;
-                        sem.weight = sem.weight>hits[i].score?sem.weight:hits[i].score;
+                        sem.weight = sem.weight>hits[i].score-0.0002f?sem.weight:hits[i].score-0.0002f;
                       }
-                      relatedConcepts.put(sem.name, sem);
+                      if(sem!=null)
+                        relatedConcepts.put(sem.name, sem);
                     }
                     //else
                       //System.out.println(assoStr+"...see-also not relevant!");
@@ -1056,18 +1812,18 @@ public class SemanticSearchHandler extends SearchHandler
   }
   
   private ENUM_SEMANTIC_METHOD getSemanticMethod(String conceptMethod) {
-    if(conceptMethod.compareTo("ESA")==0)
-      return ENUM_SEMANTIC_METHOD.e_ESA;
-    else if (conceptMethod.compareTo("ESA_anchors")==0)
-      return ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS;
-    else if (conceptMethod.compareTo("ESA_seealso")==0)
-      return ENUM_SEMANTIC_METHOD.e_ESA_SEE_ALSO;
-    else if (conceptMethod.compareTo("ESA_anchors_seealso")==0)
-      return ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO;
-    else if (conceptMethod.compareTo("ESA_seealso_asso")==0)
-      return ENUM_SEMANTIC_METHOD.e_ESA_SEE_ALSO_ASSO;
-    else if (conceptMethod.compareTo("ESA_anchors_seealso_asso")==0)
-      return ENUM_SEMANTIC_METHOD.e_ESA_ANCHORS_SEE_ALSO_ASSO;    
+    if(conceptMethod.compareTo("Explicit")==0)
+      return ENUM_SEMANTIC_METHOD.e_MSA;
+    else if (conceptMethod.compareTo("MSA_anchors")==0)
+      return ENUM_SEMANTIC_METHOD.e_MSA_ANCHORS;
+    else if (conceptMethod.compareTo("MSA_seealso")==0)
+      return ENUM_SEMANTIC_METHOD.e_MSA_SEE_ALSO;
+    else if (conceptMethod.compareTo("MSA_anchors_seealso")==0)
+      return ENUM_SEMANTIC_METHOD.e_MSA_ANCHORS_SEE_ALSO;
+    else if (conceptMethod.compareTo("MSA_seealso_asso")==0)
+      return ENUM_SEMANTIC_METHOD.e_MSA_SEE_ALSO_ASSO;
+    else if (conceptMethod.compareTo("MSA_anchors_seealso_asso")==0)
+      return ENUM_SEMANTIC_METHOD.e_MSA_ANCHORS_SEE_ALSO_ASSO;    
     else return ENUM_SEMANTIC_METHOD.e_UNKNOWN;
   }
   
@@ -1096,8 +1852,9 @@ public class SemanticSearchHandler extends SearchHandler
       } //
       TopDocs topDocs = searcher.search(query, Integer.MAX_VALUE);
       if(topDocs.totalHits > 0) {
-        cachedConceptsInfo = new HashMap<String,CachedConceptInfo>();
+        cachedConceptsInfo = new HashMap<String,CachedConceptInfo>(/*5000000*/);
         String title = "";
+	String docno = "";
         String cat1 = "";
         String cat2 = "";
         IndexableField[] multi = null;
@@ -1105,14 +1862,23 @@ public class SemanticSearchHandler extends SearchHandler
         for(ScoreDoc d : topDocs.scoreDocs) {
           // retrieve title
           title = indexReader.document(d.doc).getFields("title")[0].stringValue();
+
+          // retrieve docno
+          docno = indexReader.document(d.doc).getField("docno").stringValue();
           
+          // retrieve length
+          int length = Integer.parseInt(indexReader.document(d.doc).getField("length").stringValue());
+
           // retrieve categories
           multi = indexReader.document(d.doc).getFields("category");
           cat1 = multi.length>0? multi[0].stringValue():"";
           cat2 = multi.length>1? multi[1].stringValue():"";
           
-          cachedInfo = new CachedConceptInfo(title, cat1, cat2);
+          cachedInfo = new CachedConceptInfo(title, length, docno, cat1, cat2);
           cachedConceptsInfo.put(title,  cachedInfo);
+          
+          if(cachedConceptsInfo.size()>500000)
+            break;
         }
         System.out.println("cached ("+cachedConceptsInfo.size()+") concepts.");
       }
@@ -1133,10 +1899,10 @@ public class SemanticSearchHandler extends SearchHandler
       String line;
       CachedAssociationInfo associationInfo = null;
       
-      titleIntMapping = new HashMap<String,Integer>(4000000);
-      titleStrMapping = new HashMap<Integer,String>(4000000);
+      titleIntMapping = new HashMap<String,Integer>(/*5000000*/);
+      titleStrMapping = new HashMap<Integer,String>(/*5000000*/);
       
-      cachedAssociationsInfo = new HashMap<Integer,CachedAssociationInfo>(4000000);
+      cachedAssociationsInfo = new HashMap<Integer,CachedAssociationInfo>(/*5000000*/);
       
       line = f.readLine();
       String[] association = new String[2];
@@ -1171,6 +1937,8 @@ public class SemanticSearchHandler extends SearchHandler
         if(associations.length>0)
           cachedAssociationsInfo.put(new Integer(key), associationInfo);
         
+        if(cachedAssociationsInfo.size()>500000)
+          break;
         line = f.readLine();
       }
       f.close();
