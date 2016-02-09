@@ -15,11 +15,184 @@
 
 #macro(q)&q=$!{esc.url($params.get('q'))}#end
 
+#macro(filter_header $fq) 
+#set ($name = $fq.substring(0,$fq.indexOf(':')))
+	#if($name=="publication_date")		
+		#set ($value = $fq.substring($math.add(2,$fq.indexOf(':'))))
+		#set($header_name = "publication date")
+		#set($header_value = "#date_year($value)")
+	#elseif($name=="application_date")
+		#set ($value = $fq.substring($math.add(2,$fq.indexOf(':'))))
+		#set($header_name = "application date")
+		#set($header_value = "#date_year($value)")
+	#elseif($name=="ipc_section")
+		#set ($value = $fq.substring($math.add(1,$fq.indexOf(':'))).replaceAll('\"',""))
+		#set($header_name = "ipc section")
+		#set($header_value = $ipc_sections_titles.get($value) + " (" + $value + ")")
+	#else
+		#set ($name = $fq.substring(0,$fq.indexOf(':')))
+		#set ($value = $fq.substring($math.add(1,$fq.indexOf(':'))))
+		#set($header_name = $name)
+		#set($header_value = $value)
+	#end
+	$header_name:($header_value)
+#end
+
 #macro(fqs $p)#foreach($fq in $p)#if($velocityCount>1)&#{end}fq=$esc.url($fq)#end#end
 
 #macro(debug)#if($request.params.get('debugQuery'))&debugQuery=true#end#end
 
 #macro(boostPrice)#if($request.params.get('bf') == 'price')&bf=price#end#end        
+
+#macro(analytic)
+#if($request.params.get('analytic'))
+&analytic=$request.params.get('analytic')
+#end
+#if($request.params.get('hincludeq'))
+&hincludeq=$request.params.get('hincludeq')
+#end
+#if($request.params.get('showrecords'))
+&showrecords=$request.params.get('showrecords')
+#end
+#if($request.params.get('conceptsmethod'))
+&conceptsmethod=$request.params.get('conceptsmethod')
+#end
+#if($request.params.get('conceptsno'))
+&conceptsno=$request.params.get('conceptsno')
+#end
+#if($request.params.get('searchtitle'))
+&searchtitle=$request.params.get('searchtitle')
+#end
+#if($request.params.get('searchabstract'))
+&searchabstract=$request.params.get('searchabstract')
+#end
+#if($request.params.get('searchclaims'))
+&searchclaims=$request.params.get('searchclaims')
+#end
+#if($request.params.get('hmaxngrams'))
+&hmaxngrams=$request.params.get('hmaxngrams')
+#end
+#if($request.params.get('hseealsomaxngrams'))
+&hseealsomaxngrams=$request.params.get('hseealsomaxngrams')
+#end
+#if($request.params.get('hminwikilen'))
+&hminwikilen=$request.params.get('hminwikilen')
+#end
+#if($request.params.get('hminseealsolen'))
+&hminseealsolen=$request.params.get('hminseealsolen')
+#end
+#if($request.params.get('hminassocnt'))
+&hminassocnt=$request.params.get('hminassocnt')
+#end
+#if($request.params.get('hmaxhits'))
+&hmaxhits=$request.params.get('hmaxhits')
+#end
+#if($request.params.get('hwikifield'))
+&hwikifield=$request.params.get('hwikifield')
+#end
+#if($request.params.get('alltext'))
+&alltext=$request.params.get('alltext')
+#end
+#if($request.params.get('hsim'))
+&hsim=$request.params.get('hsim')
+#end
+#if($request.params.get('hshowids'))
+&hshowids=$request.params.get('hshowids')
+#end
+#if($request.params.get('hshowpids'))
+&hshowpids=$request.params.get('hshowpids')
+#end
+#if($request.params.get('hshowweight'))
+&hshowweight=$request.params.get('hshowweight')
+#end
+#if($request.params.get('hshowassocounts'))
+&hshowassocounts=$request.params.get('hshowassocounts')
+#end
+#if($request.params.get('hshowtype'))
+&hshowtype=$request.params.get('hshowtype')
+#end
+#if($request.params.get('hshowdocno'))
+&hshowdocno=$request.params.get('hshowdocno')
+#end
+#if($request.params.get('hshowlen'))
+&hshowlen=$request.params.get('hshowlen')
+#end
+#if($request.params.get('hshowtable'))
+&hshowtable=$request.params.get('hshowtable')
+#end
+#if($request.params.get('hrelaxcache'))
+&hrelaxcache=$request.params.get('hrelaxcache')
+#end
+#if($request.params.get('hrelatednessexpr'))
+&hrelatednessexpr=$request.params.get('hrelatednessexpr')
+#end
+#if($request.params.get('hexperin'))
+&hexperin=$request.params.get('hexperin')
+#end
+#if($request.params.get('hexperout'))
+&hexperout=$request.params.get('hexperout')
+#end
+#if($request.params.get('hrelaxcategories'))
+&hrelaxcategories=$request.params.get('hrelaxcategories')
+#end
+#if($request.params.get('hrelaxsametitle'))
+&hrelaxsametitle=$request.params.get('hrelaxsametitle')
+#end
+#if($request.params.get('hrelaxlistof'))
+&hrelaxlistof=$request.params.get('hrelaxlistof')
+#end
+#if($request.params.get('hrelaxdisambig'))
+&hrelaxdisambig=$request.params.get('hrelaxdisambig')
+#end
+#if($request.params.get('hrelaxner'))
+&hrelaxner=$request.params.get('hrelaxner')
+#end
+#if($request.params.get('hwikiextraq'))
+&hwikiextraq=$!{esc.url($request.params.get('hwikiextraq'))}
+#end
+#if($request.params.getParams('ignsem'))
+#foreach($ignsem in $request.params.getParams('ignsem'))
+&ignsem=$ignsem
+#end
+#end
+#end
+
+#macro(facet_fields)
+	#if($!esc.url($params.get('facet.field')))
+		&facet=true
+		#foreach($facetfield in $request.params.getParams('facet.field'))
+		&facet.field=$!esc.url($facetfield)		
+		#end		
+	#end
+#end	
+	
+#macro(facet_ranges)
+	#if($!esc.url($params.get('facet.range')))
+		&facet=true
+		#foreach($facetrange in $request.params.getParams('facet.range'))
+		&facet.range=$!esc.url($facetrange)		
+		#end		
+	#end
+	#if($!esc.html($params.get('f.publication_date.facet.range.start')))
+		&f.publication_date.facet.range.start=$!esc.url($params.get('f.publication_date.facet.range.start'))
+	#end
+	#if($!esc.html($params.get('f.publication_date.facet.range.end')))
+		&f.publication_date.facet.range.end=$!esc.url($params.get('f.publication_date.facet.range.end'))
+	#end
+	#if($!esc.html($params.get('f.publication_date.facet.range.gap')))
+		&f.publication_date.facet.range.gap=$!esc.url($params.get('f.publication_date.facet.range.gap'))
+	#end
+	
+	#if($!esc.html($params.get('f.application_date.facet.range.start')))
+		&f.application_date.facet.range.start=$!esc.url($params.get('f.application_date.facet.range.start'))
+	#end
+	#if($!esc.html($params.get('f.application_date.facet.range.end')))
+		&f.application_date.facet.range.end=$!esc.url($params.get('f.application_date.facet.range.end'))
+	#end
+	#if($!esc.html($params.get('f.application_date.facet.range.gap')))
+		&f.application_date.facet.range.gap=$!esc.url($params.get('f.application_date.facet.range.gap'))
+	#end
+#end        
 
 #macro(annotate)#if($request.params.get('annotateBrowse'))&annotateBrowse=true#end#end
 
@@ -39,19 +212,20 @@
 
 #macro(url_for_lens)#{url_for_home}#lens#end
 
-#macro(url_for_start $start)#url_for_home#lens&start=$start#end
+#macro(url_for_start $start)#url_for_home#lens#analytic#facet_ranges#facet_fields&start=$start#end
 
 #macro(url_for_filters $p)#url_for_home?#q#boostPrice#spatial#qOpts#if($list.size($p) > 0)&#fqs($p)#end#debug#end
 
 #macro(url_for_nested_facet_query $field)#url_for_home#lens&fq=$esc.url($field)#end
 
 ## TODO: convert to use {!raw f=$field}$value (with escaping of course)
-#macro(url_for_facet_filter $field $value)#url_for_home#lens&fq=#if($value!=$null)$esc.url($field):%22$esc.url($value)%22#else-$esc.url($field):[*+TO+*]#end#end
+#macro(url_for_facet_filter $field $value)#url_for_home#lens&fq=$esc.url($field):%22$esc.url($value)%22#end
 
 #macro(url_for_facet_date_filter $field $value)#url_for_home#lens&fq=$esc.url($field):$esc.url($value)#end
 
 #macro(url_for_facet_range_filter $field $value)#url_for_home#lens&fq=$esc.url($field):$esc.url($value)#end
 
+#macro(url_for_cluster_filter $field $value)#url_for_home?q=$esc.url($field):$esc.url($value)&search1=localsearch#end
 
 #macro(link_to_previous_page $text)
   #if($page.current_page_number > 1)
@@ -126,17 +300,10 @@
     <ul>
       #foreach ($pivot in $pivots)
         #foreach ($entry in $pivot.value)
-          <a href="#url_for_facet_filter($entry.field, $entry.value)">$entry.field::#if($entry.value!=$null)$entry.value#else<em>missing</em>#end</a> ($entry.count)
+          <a href="#url_for_facet_filter($entry.field, $entry.value)">$entry.field::$entry.value</a> ($entry.count)
           <ul>
             #foreach($nest in $entry.pivot)
-              <li>
-                #if($nest.value != $null)
-                  <a href="#url_for_facet_filter($entry.field, $entry.value)&fq=$esc.url($nest.field):%22$esc.url($nest.value)%22">$nest.field::$nest.value</a>
-                #else
-                  <a href="#url_for_facet_filter($entry.field, $entry.value)&fq=-$esc.url($nest.field):[*+TO+*]">$nest.field::<em>missing</em></a>
-                #end
-                ($nest.count)
-              </li>
+              <a href="#url_for_facet_filter($entry.field, $entry.value)&fq=$esc.url($nest.field):%22$esc.url($nest.value)%22">$nest.field::$nest.value</a> ($nest.count)
             #end
           </ul>
         #end
@@ -162,6 +329,11 @@ $v##
 #macro(utc_date $theDate)
 $date.format("yyyy-MM-dd'T'HH:mm:ss'Z'",$theDate,$date.getLocale(),$date.getTimeZone().getTimeZone("UTC"))##
 #end
+
+##macro(date_year $theDate)
+##$math.add($math.toInteger($theDate.substring(0,4)),1)
+##$math.toInteger($theDate.substring(0,4))
+##end
 
 #macro(format_value $val)
 #if(${val.class.name} == "java.util.Date")

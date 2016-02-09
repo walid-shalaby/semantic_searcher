@@ -4,8 +4,32 @@
 }
 
 #head{
+  
   width: 100%;
 }
+
+html, body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    padding: 0;
+}
+
+#appLayout {
+    height: 100%;
+}
+#leftCol {
+    width: 14em;
+}
+
+#leftQuery {
+    width: 14em;
+}
+
+.claro .demoLayout .edgePanel {
+    background-color: #eee;
+}
+
 .array-field {
   border: 2px solid #474747;
   background: #FFE9D8;
@@ -33,6 +57,7 @@
 body {
   font-family: Helvetica, Arial, sans-serif;
   font-size: 10pt;
+  background-color: #eee;
 }
 
 a {
@@ -51,7 +76,7 @@ a {
 
 .tabs-bar {
   padding: 5px;
-  width: 100%;
+  width: 90%;
   border: 1px solid;
   border-width: 0px 0px 1px 0px;
 }
@@ -119,30 +144,26 @@ a {
 }
 
 #query-form{
-  width: 80%;
+  width: 100%;
+  font-size: 12px;
 }
 
 
 
 .query-box, .constraints {
-  padding: 5px;
-  margin: 5px;
+  padding: 1px;
+  margin: 0px;
   font-weight: normal;
-  font-size: 24px;
+  font-size: 12px;
   letter-spacing: 0.08em;
 }
 
-.query-box #q {
-  margin-left: 8px;
-  width: 60%;
-  height: 50px;
+.query-box #q,#q1{
+  width: 90%;
   border: 1px solid #999;
-  font-size: 1em;
+  font-size: 14px;
+  height: 20px;
   padding: 0.4em;
-}
-
-.query-box {
-  
 }
 
 .query-boost {
@@ -154,9 +175,7 @@ a {
 }
 
 .query-box .inputs{
-  left: 180px;
   position: relative;
-  
 }
 
 #logo {
@@ -168,17 +187,17 @@ a {
   padding-left: 33%;
   background: #eee;
   margin: 5px;
-  margin-left: 210px;
-  padding-top: 5px;
-  padding-bottom: 5px;
+  margin-left: 10px;
+  padding-top: 0px;
+  padding-bottom: 0px;
 }
 
 .result-document {
   border: 1px solid #999;
   padding: 5px;
   margin: 5px;
-  margin-left: 210px;
-  margin-bottom: 15px;
+  margin-left: 10px;
+  margin-bottom: 0px;
 }
 
 .result-document div{
@@ -186,7 +205,7 @@ a {
 }
 
 .result-title{
-  width:60%;
+  width:100%;
 }
 
 .result-body{
@@ -228,3 +247,47 @@ li.show {
   position: relative;
 
 }
+
+.rangelbl { 
+  padding: 0px; 
+  width: 2.4em;
+  border: 1px ;
+  color: #000000;
+  font-size: 10px;
+  background: transparent;
+  text-align: center;
+}
+
+.query-table {
+  border-spacing:7px
+}
+
+.sem_node {
+  cursor: pointer;
+}
+
+.sem_node circle {
+  fill: #fff;
+  stroke: steelblue;
+  stroke-width: 1.5px;
+}
+
+.sem_node text {
+  font: 11px sans-serif;
+}
+
+.sem_link {
+  fill: none;
+  stroke: #ccc;
+  stroke-width: 1.5px;
+}
+
+#tooltip,#tooltiptbl { background-color: lightyellow;
+    padding: 3px 5px;
+    border: 1px solid black;
+    color: black;
+    font-size: 14px;
+    text-align: left;
+    border-spacing:7px
+}
+

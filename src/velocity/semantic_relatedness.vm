@@ -1,0 +1,9 @@
+#if($params.get('analytic')=="relatedness" && $response.response.semantic_concepts.relatedness)
+<div>
+	<br>
+	<h3>Relatedness score: $response.response.semantic_concepts.relatedness</h3>
+	1 - completely unrelated<br>
+	5 - very related
+	<br>
+</div>
+#end

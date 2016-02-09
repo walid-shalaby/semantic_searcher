@@ -5,46 +5,84 @@
 
 ##TODO: Make some nice tabs here
 
-#set($queryOpts = $params.get("queryOpts"))
+#if($params.get("analytic"))
+  #set($analytic = $params.get("analytic"))
+#else
+  #set($analytic = "explore")
+#end
 
 <div class="tabs-bar" #annTitle("Click the link to demonstrate various Solr capabilities")>
 
-  <span>Type of Search:</span>
+  <span>Type of Analytic:</span>
 
-  ##queryOpts=$queryOpts
+  ##analytic=$analytic
 
-  ## return to Simple Search
-  ##set( $selected = ($queryOpts && $queryOpts != "") )
-  #set( $selected = ! $queryOpts )
+  ## return to Technology Explorer Analytic
+  ##set( $selected = ($analytic && $analytic != "") )
+  #set( $selected = ($analytic == "explore") )
   <span class="tab #if($selected)selected#end">
     #if($selected)
-      Simple
+      Technology Explorer
     #else
-      <a href="#url_for_home/?#debug#annotate">
-        Simple</a>
+      <a href="#url_for_home?analytic=explore">
+        Technology Explorer</a>
     #end
   </span>
 
-  ## GEO-Spatial / Location Based
-  #set( $selected = ($queryOpts == "spatial") )
+  ## Technology Landscape analytic
+  #set( $selected = ($analytic == "landscape") )
   <span class="tab #if($selected)selected#end">
     #if($selected)
-      Spatial
+      Technology Landscape
     #else
-      <a href="#url_for_home?&queryOpts=spatial#debug#annotate">
-        Spatial</a>
+      <a href="#url_for_home?analytic=landscape">
+        Technology Landscape</a>
     #end
   </span>
 
-  ## Group By Field
-  #set( $selected = ($queryOpts == "group") )
+  ## Competitive Intelligence analytic
+  #set( $selected = ($analytic == "competitive") )
   <span class="tab #if($selected)selected#end">
     #if($selected)
-      Group By
+      Competitive Intelligence
     #else
-      <a href="#url_for_home?#debug#annotate&queryOpts=group&group=true&group.field=manu_exact">
-        Group By</a>
+      <a href="#url_for_home?analytic=competitive">
+        Competitive Intelligence</a>
     #end
   </span>
 
+  ## Prior Art analytic
+  #set( $selected = ($analytic == "prior") )
+  <span class="tab #if($selected)selected#end">
+    #if($selected)
+      Prior Art
+    #else
+      <a href="#url_for_home?analytic=prior">
+        Prior Art</a>
+    #end
+  </span>
+
+  #*
+  ## Search analytic
+  #set( $selected = ($analytic == "search") )
+  <span class="tab #if($selected)selected#end">
+    #if($selected)
+      Search
+    #else
+      <a href="#url_for_home?analytic=search&facet=true&facet.field=ipc_section&facet.range=publication_date&f.publication_date.facet.range.start=1975-01-01T00:00:00Z/YEAR&f.publication_date.facet.range.end=NOW/YEAR&f.publication_date.facet.range.gap=%2B1YEAR&facet.range=application_date&f.application_date.facet.range.start=1975-01-01T00:00:00Z/YEAR&f.application_date.facet.range.end=NOW/YEAR&f.application_date.facet.range.gap=%2B1YEAR">
+        Search</a>
+    #end
+  </span>
+
+  ## Relatedness analytic
+  #set( $selected = ($analytic == "relatedness") )
+  <span class="tab #if($selected)selected#end">
+    #if($selected)
+      Semantic Relatedness
+    #else
+      <a href="#url_for_home?analytic=relatedness">
+        Semantic Relatedness</a>
+    #end
+  </span>
+  *#
 </div>

@@ -2,16 +2,643 @@
  *  Renders the main query form
  *#
 
-<div class="query-box">
-  <form id="query-form" action="#{url_for_home}" method="GET">
+#set( $analytic = $params.get("analytic") )
+#set( $defminwikilen = 0 )
 
+<script>
+function changeRange(element, val) {
+	document.getElementById(element).value=parseInt(document.getElementById(element).value)+val;
+}
+</script>
+<div class="query-box">
+  <form id="query-form" action="#{url_for_home}" method="GET" onsubmit="">
     <div class="inputs">
       <span #annTitle("Add the query using the &q= parameter")>
-        Find:
-        <input type="text" id="q" name="q" value="$!esc.html($params.get('q'))"/>
-        <input type="submit" id="querySubmit"/>
-        <input type="reset"/>
+        <!--Find: -->
+        #if($analytic=="landscape")
+			#set($default='e.g. Solar Cell')
+			<table class="query-table">
+				<tr>
+					<td>
+						<input type="text" id="q" name="q" onfocus="if (this.value=='$default') {this.value='';this.style.color='#000'};" onblur="if(this.value==''){this.value='$default';this.style.color='#ccc';} else this.style.color='#000';" value="#if($!esc.html($params.get('q')) && $!esc.html($params.get('q'))!="")$!esc.html($params.get('q'))#else$default#end" style=#if($!esc.html($params.get('q')) && $!esc.html($params.get('q'))!="")"color:#000"#else"color:#ccc"#end/>
+					</td>
+				</tr>
+				
+				<tr>
+				<td align="center">
+					<input type="submit" value="Explore" id="querySubmit"/>
+				</td>
+				</tr>
+				
+				<tr>
+				<td align="center">
+					<br/>
+				</td>
+				</tr>
+				<tr>
+				<td>
+					<input type="checkbox" name="hincludeq" #if($params.get('hincludeq') || !$params.get('q'))checked#end  />Include Query	
+				</td>
+				</tr>				
+
+				<tr>
+				<td>
+					<input type="checkbox" name="showrecords" id="showrecords" #if($params.get('showrecords') || !$params.get('q'))checked#end /> Show Records	
+				</td>
+				</tr>
+
+				<tr>
+				<td>
+					Method:
+  					<select id="conceptsmethod" name="conceptsmethod">
+					#if($!esc.html($params.get('conceptsmethod')))
+						#set($selected=$!esc.html($params.get('conceptsmethod')))
+					#else
+						#set($selected = "MSA_seealso")
+					#end
+					##foreach ($i in ["Explicit","MSA_anchors","MSA_seealso","MSA_seealso_asso","MSA_anchors_seealso","MSA_anchors_seealso_asso"])
+					#set( $method = {"Explicit" : "Explicit", "MSA_seealso" : "MSA1", "MSA_seealso_asso" : "MSA2"} )
+					#foreach ($i in $method.keySet())
+						#if($i==$selected)
+							<option value=$i selected>$method.get($i)</option>
+						#else
+							<option value=$i>$method.get($i)</option>
+						#end
+					#end
+					</select>
+  				</td>
+				</tr>
+				
+				<tr>
+				<td>
+					Concepts:
+					<select id="conceptsno" name="conceptsno">
+					#if($!esc.html($params.get('conceptsno')))
+						#set($selected=$!esc.html($params.get('conceptsno')))
+					#else
+						#set($selected = 20)
+					#end
+					#foreach ($i in [0..100])
+						#if($i==$selected)
+							<option selected>$i</option>
+						#else
+							<option>$i</option>
+						#end
+					#end
+					</select>
+				</td>
+				</tr>
+
+				<tr>					
+				<td>
+						<fieldset>
+							<legend>Search Fields:</legend>
+							<input type="checkbox" name="searchall" #if($params.get('searchall'))checked#end />All<br/>
+							<input type="checkbox" name="searchtitle" #if($params.get('searchtitle') || !$params.get('q'))checked#end />Title<br/>
+							<input type="checkbox" name="searchabstract" #if($params.get('searchabstract') || !$params.get('q'))checked#end />Abstract<br/>
+							<input type="checkbox" name="searchdescription" #if($params.get('searchdescription'))checked#end />Description<br/>
+							<input type="checkbox" name="searchclaims" #if($params.get('searchclaims') || !$params.get('q'))checked#end />Claims<br/>
+						</fieldset>
+				</td>
+				</tr>					
+			</table>
+						
+		#elseif($analytic=="competitive")			
+			#set($default='e.g. IBM')
+			<table class="query-table">
+				<tr>
+					<td>
+						<input type="text" id="q" name="q" onfocus="if (this.value=='$default') {this.value='';this.style.color='#000'};" onblur="if(this.value==''){this.value='$default';this.style.color='#ccc';} else this.style.color='#000';" value="#if($!esc.html($params.get('q')) && $!esc.html($params.get('q'))!="")$!esc.html($params.get('q'))#else$default#end" style=#if($!esc.html($params.get('q')) && $!esc.html($params.get('q'))!="")"color:#000"#else"color:#ccc"#end/>
+					</td>
+				</tr>
+				<tr>
+					<td align="center">
+	        			<input type="submit" value="Analyze" id="querySubmit"/>
+	        		</td>
+				</tr>
+				<tr>
+				<td align="center">
+					<br/>
+				</td>
+				</tr>
+				<tr>
+				<td>
+					Method:
+	  					<select id="conceptsmethod" name="conceptsmethod">
+						#if($!esc.html($params.get('conceptsmethod')))
+							#set($selected=$!esc.html($params.get('conceptsmethod')))
+						#else
+							#set($selected = "MSA_seealso")
+						#end
+						##foreach ($i in ["Explicit","MSA_anchors","MSA_seealso","MSA_seealso_asso","MSA_anchors_seealso","MSA_anchors_seealso_asso"])
+						#set( $method = {"Explicit" : "Explicit", "MSA_seealso" : "MSA1", "MSA_seealso_asso" : "MSA2"} )
+						#foreach ($i in $method.keySet())
+							#if($i==$selected)
+								<option value=$i selected>$method.get($i)</option>
+							#else
+								<option value=$i>$method.get($i)</option>
+							#end
+						#end
+						</select>
+  				</td>
+				</tr>
+				<tr>
+				<td>
+					Concepts:
+					<select id="conceptsno" name="conceptsno">
+					#if($!esc.html($params.get('conceptsno')))
+						#set($selected=$!esc.html($params.get('conceptsno')))
+					#else
+						#set($selected = 20)
+					#end
+					#foreach ($i in [0..100])
+						#if($i==$selected)
+							<option selected>$i</option>
+						#else
+							<option>$i</option>
+						#end
+					#end
+					</select>
+				</td>
+				</tr>
+				<tr>
+				<td>
+					Innovations: 
+					<select id="conceptsno" name="patentsno">
+					#if($!esc.html($params.get('patentsno')))
+						#set($selected=$!esc.html($params.get('patentsno')))
+					#else
+						#set($selected = 50)
+					#end
+					#foreach ($i in [0..100])
+						#if($i==$selected)
+							<option selected>$i</option>
+						#else
+							<option>$i</option>
+						#end
+					#end
+					</select>
+				</td>
+				</tr>
+				<tr>					
+				<td>
+						<fieldset>
+							<legend>Source Field:</legend>
+							<input type="checkbox" name="extractall" #if($params.get('extractall'))checked#end />All<br/>
+							<input type="checkbox" name="extracttitle" #if($params.get('extracttitle') || !$params.get('q'))checked#end />Title<br/>
+							<input type="checkbox" name="extractabstract" #if($params.get('extractabstract'))checked#end />Abstract<br/>
+							<input type="checkbox" name="extractdescription" #if($params.get('extractdescription'))checked#end />Description<br/>
+							<input type="checkbox" name="extractclaims" #if($params.get('extractclaims'))checked#end />Claims<br/>
+						</fieldset>
+				</td>
+				</tr>					
+				<tr>					
+				<td>
+						<fieldset>
+							<legend>Search Fields:</legend>
+							<input type="checkbox" name="searchall" #if($params.get('searchall'))checked#end />All<br/>
+							<input type="checkbox" name="searchtitle" #if($params.get('searchtitle') || !$params.get('q'))checked#end />Title<br/>
+							<input type="checkbox" name="searchabstract" #if($params.get('searchabstract') || !$params.get('q'))checked#end />Abstract<br/>
+							<input type="checkbox" name="searchdescription" #if($params.get('searchdescription'))checked#end />Description<br/>
+							<input type="checkbox" name="searchclaims" #if($params.get('searchclaims') || !$params.get('q'))checked#end />Claims<br/>
+						</fieldset>
+				</td>
+				</tr>					
+				</table>
+			
+		#elseif($analytic=="prior")
+			#set($default='innovation memo')
+			<table class="query-table">
+				<tr>
+					<td>
+						<input type="text" id="q" name="q" onfocus="if (this.value=='$default') {this.value='';this.style.color='#000'};" onblur="if(this.value==''){this.value='$default';this.style.color='#ccc';} else this.style.color='#000';" value="#if($!esc.html($params.get('q')) && $!esc.html($params.get('q'))!="")$!esc.html($params.get('q'))#else$default#end" style=#if($!esc.html($params.get('q')) && $!esc.html($params.get('q'))!="")"color:#000"#else"color:#ccc"#end/>
+					</td>
+				</tr>
+
+				<tr>
+				<td align="center">
+				        <input type="submit" value="Search" id="querySubmit"/>
+				</td>
+				</tr>
+				<tr>
+				<td align="center">
+					<br/>
+				</td>
+				</tr>
+
+				<tr>
+				<td>
+					<!--input type="checkbox" name="hincludeq" #if($params.get('hincludeq') || !$params.get('q'))checked#end  /-->
+					<input type="checkbox" name="hincludeq" #if($params.get('hincludeq'))checked#end  />Include Query	
+				</td>
+				</tr>
+
+				<tr>
+				<td>
+					Method:
+  					<select id="conceptsmethod" name="conceptsmethod">
+					#if($!esc.html($params.get('conceptsmethod')))
+						#set($selected=$!esc.html($params.get('conceptsmethod')))
+					#else
+						#set($selected = "MSA_seealso")
+					#end
+					##foreach ($i in ["Explicit","MSA_anchors","MSA_seealso","MSA_seealso_asso","MSA_anchors_seealso","MSA_anchors_seealso_asso"])
+					#set( $method = {"Explicit" : "Explicit", "MSA_seealso" : "MSA1", "MSA_seealso_asso" : "MSA2"} )
+					#foreach ($i in $method.keySet())
+						#if($i==$selected)
+							<option value=$i selected>$method.get($i)</option>
+						#else
+							<option value=$i>$method.get($i)</option>
+						#end
+					#end
+					</select>
+  				</td>
+				</tr>
+				
+				<tr>
+				<td>
+					Concepts:
+					<select id="conceptsno" name="conceptsno">
+					#if($!esc.html($params.get('conceptsno')))
+						#set($selected=$!esc.html($params.get('conceptsno')))
+					#else
+						#set($selected = 20)
+					#end
+					#foreach ($i in [0..100])
+						#if($i==$selected)
+							<option selected>$i</option>
+						#else
+							<option>$i</option>
+						#end
+					#end
+					</select>
+				</td>
+				</tr>
+				<tr>					
+				<td>
+						<fieldset>
+							<legend>Search Fields:</legend>
+							<input type="checkbox" name="searchall" #if($params.get('searchall'))checked#end />All<br/>
+							<input type="checkbox" name="searchtitle" #if($params.get('searchtitle') || !$params.get('q'))checked#end />Title<br/>
+							<input type="checkbox" name="searchabstract" #if($params.get('searchabstract') || !$params.get('q'))checked#end />Abstract<br/>
+							<input type="checkbox" name="searchdescription" #if($params.get('searchdescription'))checked#end />Description<br/>
+							<input type="checkbox" name="searchclaims" #if($params.get('searchclaims') || !$params.get('q'))checked#end />Claims<br/>
+						</fieldset>
+				</td>
+				</tr>					
+			</table>			
+		#elseif($analytic=="search")
+			#set($default='Search me')
+			<input type="text" id="q" name="q" onfocus="if (this.value=='$default')
+			{this.value='';this.style.color='#000'};" onblur="if(this.value==''){this.value='$default';this.style.color='#ccc';} else this.style.color='#000';" value="#if($!esc.html($params.get('q')) && $!esc.html($params.get('q'))!="")$!esc.html($params.get('q'))#else$default#end" style=#if($!esc.html($params.get('q')) && $!esc.html($params.get('q'))!="")"color:#000"#else"color:#ccc"#end/>
+	        <input type="submit" value="Search" id="querySubmit"/>
+	        <br><br>			
+		#elseif($analytic=="relatedness")
+			#set($default='Fish is being cooked by a woman')
+			#set($default1='A woman is cooking fish')
+
+			<input type="text" id="q" name="q" onfocus="if (this.value=='$default')
+			{this.value='';this.style.color='#000'};" onblur="if(this.value==''){this.value='$default';this.style.color='#ccc';} else this.style.color='#000';" value="#if($!esc.html($params.get('q')) && $!esc.html($params.get('q'))!="")$!esc.html($params.get('q'))#else$default#end" style=#if($!esc.html($params.get('q')) && $!esc.html($params.get('q'))!="")"color:#000"#else"color:#ccc"#end/>
+	        
+	        <input type="submit" value="Compare" id="querySubmit"/>
+	        
+	        <input type="text" id="q1" name="q1" onfocus="if (this.value=='$default1')
+			{this.value='';this.style.color='#000'};" onblur="if(this.value==''){this.value='$default1';this.style.color='#ccc';} else this.style.color='#000';" value="#if($!esc.html($params.get('q1')) && $!esc.html($params.get('q1'))!="")$!esc.html($params.get('q1'))#else$default1#end" style=#if($!esc.html($params.get('q1')) && $!esc.html($params.get('q1'))!="")"color:#000"#else"color:#ccc"#end/>	        
+			<br><br>
+			<font size=3>
+			<table style=border-spacing:20px>
+			<tr>
+			<td>
+			Method: 
+			<select id="conceptsmethod" name="conceptsmethod">
+			#if($!esc.html($params.get('conceptsmethod')))
+				#set($selected=$!esc.html($params.get('conceptsmethod')))
+			#else
+				#set($selected = "MSA_seealso_asso")
+			#end
+			##foreach ($i in ["Explicit","MSA_anchors","MSA_seealso","MSA_seealso_asso","MSA_anchors_seealso","MSA_anchors_seealso_asso"])
+			#foreach ($i in ["Explicit","MSA_seealso","MSA_seealso_asso"])
+				#if($i==$selected)
+					<option selected>$i</option>
+				#else
+					<option>$i</option>
+				#end
+			#end
+			</select>
+			</td>
+			<td>
+			Concepts: 
+			<select id="conceptsno" name="conceptsno">
+			#if($!esc.html($params.get('conceptsno')))
+				#set($selected=$!esc.html($params.get('conceptsno')))
+			#else
+				#set($selected = 500)
+			#end
+			#foreach ($i in [0..100])
+				#if($i==$selected)
+					<option selected>$i</option>
+				#else
+					<option>$i</option>
+				#end
+			#end
+			</select>
+			</td>
+			</tr>
+			</table>
+			</font>
+			#set($defminwikilen = 5000)
+		#elseif(!$analytic || $analytic=="explore")
+			#set($default='e.g. Semantic Search')
+			<table class="query-table">
+				<tr>
+					<td>			
+						<input type="text" id="q" name="q" onfocus="if (this.value=='$default') {this.value='';this.style.color='#000'};" onblur="if(this.value==''){this.value='$default';this.style.color='#ccc';} else this.style.color='#000';" value="#if($!esc.html($params.get('q')) && $!esc.html($params.get('q'))!="")$!esc.html($params.get('q'))#else$default#end" style=#if($!esc.html($params.get('q')) && $!esc.html($params.get('q'))!="")"color:#000"#else"color:#ccc"#end/>
+			        </td>
+				</tr>
+				
+				<tr>
+					<td align="center"><input type="submit" value="Explore" id="querySubmit"/>
+				</td>
+				</tr>
+
+				<tr>
+				<td align="center">
+					<br/>
+				</td>				
+				</tr>
+				
+				<tr>
+				<td>
+					Method:
+  					<select id="conceptsmethod" name="conceptsmethod">
+					#if($!esc.html($params.get('conceptsmethod')))
+						#set($selected=$!esc.html($params.get('conceptsmethod')))
+					#else
+						#set($selected = "MSA_seealso")
+					#end
+					##foreach ($i in ["Explicit","MSA_anchors","MSA_seealso","MSA_seealso_asso","MSA_anchors_seealso","MSA_anchors_seealso_asso"])
+					#set( $method = {"Explicit" : "Explicit", "MSA_seealso" : "MSA1", "MSA_seealso_asso" : "MSA2"} )
+					#foreach ($i in $method.keySet())
+						#if($i==$selected)
+							<option value=$i selected>$method.get($i)</option>
+						#else
+							<option value=$i>$method.get($i)</option>
+						#end
+					#end
+					</select>
+  				</td>
+				</tr>
+
+				<tr>
+				<td>
+					Concepts:
+					<select id="conceptsno" name="conceptsno">
+					#if($!esc.html($params.get('conceptsno')))
+						#set($selected=$!esc.html($params.get('conceptsno')))
+					#else
+						#set($selected = 20)
+					#end
+					#foreach ($i in [0..100])
+						#if($i==$selected)
+							<option selected>$i</option>
+						#else
+							<option>$i</option>
+						#end
+					#end
+					</select>
+				</td>
+				</tr>
+			</table>
+		#end
+
+        <!--input type="reset"/-->
+	#if($analytic!="search")	
+		<table class="query-table">
+			<tr>
+				<td>
+					<fieldset>
+						<legend>Max.Title Size:</legend>
+						Explicit: 
+						#if($!esc.html($params.get('hmaxngrams')))
+							#set($maxngrams = $params.get('hmaxngrams'))
+						#else
+							#set($maxngrams = 3)
+						#end
+						<button type="button" onclick=changeRange("hmaxngrams",-1)>-</button>
+						<input class="rangelbl" name="hmaxngrams" id="hmaxngrams" value=$maxngrams />
+						<button type="button" onclick=changeRange("hmaxngrams",1)>+</button><br/>
+						Implicit:
+						#if($!esc.html($params.get('hseealsomaxngrams')))
+							#set($seealsomaxngrams = $params.get('hseealsomaxngrams'))
+						#else
+							#set($seealsomaxngrams = 3)
+						#end
+						<button type="button" onclick=changeRange("hseealsomaxngrams",-1)>-</button>
+						<input class="rangelbl" name="hseealsomaxngrams" id="hseealsomaxngrams" value=$seealsomaxngrams />
+						<button type="button" onclick=changeRange("hseealsomaxngrams",1)>+</button>
+					</fieldset>
+				</td>
+			</tr>
+			
+			<tr>
+			<td>
+				<fieldset>
+					<legend>Min.Article Size:</legend>
+					Explicit: 
+					#if($!esc.html($params.get('hminwikilen')))
+						#set($minwikilen = $params.get('hminwikilen'))
+					#else
+						#set($minwikilen = $defminwikilen)
+					#end							
+					<button type="button" onclick=changeRange("hminwikilen",-1)>-</button>
+					<input class="rangelbl" name="hminwikilen" id="hminwikilen" value=$minwikilen />
+					<button type="button" onclick=changeRange("hminwikilen",1)>+</button><br/>
+
+					Implicit:
+					#if($!esc.html($params.get('hminseealsolen')))
+						#set($minseealsolen = $params.get('hminseealsolen'))
+					#else
+						#set($minseealsolen = $defminwikilen)
+					#end
+					<button type="button" onclick=changeRange("hminseealsolen",-1)>-</button>
+					<input class="rangelbl" name="hminseealsolen" id="hminseealsolen" value=$minseealsolen />
+					<button type="button" onclick=changeRange("hminseealsolen",1)>+</button>
+				</fieldset>
+			</td>
+			</tr>
+
+			<tr>
+				<td>
+					#if($!esc.html($params.get('hminassocnt')))
+						#set($minassocnt = $params.get('hminassocnt'))
+					#else
+						#set($minassocnt = 1)
+					#end
+					Min.Support: 
+					<button type="button" onclick=changeRange("hminassocnt",-1)>-</button>
+					<input class="rangelbl" name="hminassocnt" id="hminassocnt" value=$minassocnt />
+					<button type="button" onclick=changeRange("hminassocnt",1)>+</button>
+				</td>
+			</tr>
+		</table>		
+	#end
+	#if($!esc.html($params.get('hmaxhits')))
+		#set($hmaxhits=$!esc.html($params.get('hmaxhits')))
+	#else
+		#set($hmaxhits=1000)
+	#end
+	<input type="hidden" name="hmaxhits" id="hmaxhits" value=$hmaxhits>
+	
+	#if($!esc.html($params.get('hwikifield')))
+		#set($hwikifield=$!esc.html($params.get('hwikifield')))
+	#else
+		#set($hwikifield="alltext")
+	#end
+	<input type="hidden" name="hwikifield" id="hwikifield" value=$hwikifield>
+
+	#if($!esc.html($params.get('hsim')))
+		#set($hsim=$!esc.html($params.get('hsim')))
+	#else
+		#set($hsim="cosine")
+	#end
+	<input type="hidden" name="hsim" id="hsim" value=$hsim>
+
+	#if($!esc.html($params.get('hshowids')))
+		#set($hshowids=$!esc.html($params.get('hshowids')))
+	#else
+		#set($hshowids=0)
+	#end
+	<input type="hidden" name="hshowids" id="hshowids" value=$hshowids>
+	
+	#if($!esc.html($params.get('hshowpids')))
+		#set($hshowpids=$!esc.html($params.get('hshowpids')))
+	#else
+		#set($hshowpids=0)
+	#end
+	<input type="hidden" name="hshowpids" id="hshowpids" value=$hshowpids>
+	
+	#if($!esc.html($params.get('hshowweight')))
+		#set($hshowweight=$!esc.html($params.get('hshowweight')))
+	#else
+		#set($hshowweight=0)
+	#end
+	<input type="hidden" name="hshowweight" id="hshowweight" value=$hshowweight>
+
+	#if($!esc.html($params.get('hshowassocounts')))
+		#set($hshowassocounts=$!esc.html($params.get('hshowassocounts')))
+	#else
+		#set($hshowassocounts=0)
+	#end
+	<input type="hidden" name="hshowassocounts" id="hshowassocounts" value=$hshowassocounts>
+
+	#if($!esc.html($params.get('hshowtype')))
+		#set($hshowtype=$!esc.html($params.get('hshowtype')))
+	#else
+		#set($hshowtype=0)
+	#end
+	<input type="hidden" name="hshowtype" id="hshowtype" value=$hshowtype>	
+	
+	#if($!esc.html($params.get('hshowdocno')))
+		#set($hshowdocno=$!esc.html($params.get('hshowdocno')))
+	#else
+		#set($hshowdocno=0)
+	#end
+	<input type="hidden" name="hshowdocno" id="hshowdocno" value=$hshowdocno>
+
+	#if($!esc.html($params.get('hshowlen')))
+		#set($hshowlen=$!esc.html($params.get('hshowlen')))
+	#else
+		#set($hshowlen=0)
+	#end
+	<input type="hidden" name="hshowlen" id="hshowlen" value=$hshowlen>
+
+	#if($!esc.html($params.get('hshowtable')))
+		#set($hshowtable=$!esc.html($params.get('hshowtable')))
+	#else
+		#set($hshowtable=0)
+	#end
+	<input type="hidden" name="hshowtable" id="hshowtable" value=$hshowtable>	
+	
+	#if($!esc.html($params.get('hrelaxcache')))
+		#set($hrelaxcache=$!esc.html($params.get('hrelaxcache')))
+	#else
+		#set($hrelaxcache='on')
+	#end
+	<input type="hidden" name="hrelaxcache" id="hrelaxcache" value="$hrelaxcache">
+
+	#if($!esc.html($params.get('hrelatednessexpr')))
+		#set($hrelatednessexpr=$!esc.html($params.get('hrelatednessexpr')))
+	#else
+		#set($hrelatednessexpr='')
+	#end
+	<input type="hidden" name="hrelatednessexpr" id="hrelatednessexpr" value="$hrelatednessexpr">
+
+	#if($!esc.html($params.get('hexperin')))
+
+		#set($hexperin=$!esc.html($params.get('hexperin')))
+	#else
+		#set($hexperin='')
+	#end
+	<input type="hidden" name="hexperin" id="hexperin" value="$hexperin">
+
+	#if($!esc.html($params.get('hexperout')))
+
+		#set($hexperout=$!esc.html($params.get('hexperout')))
+	#else
+		#set($hexperout='')
+	#end
+	<input type="hidden" name="hexperout" id="hexperout" value="$hexperout">
+
+	#if($!esc.html($params.get('hrelaxcategories')))
+		#set($hrelaxcategories=$!esc.html($params.get('hrelaxcategories')))
+	#else
+		#set($hrelaxcategories='')
+	#end
+	<input type="hidden" name="hrelaxcategories" id="hrelaxcategories" value=$hrelaxcategories>
+
+	#if($!esc.html($params.get('hrelaxsametitle')))
+		#set($hrelaxsametitle=$!esc.html($params.get('hrelaxsametitle')))
+	#else
+		#set($hrelaxsametitle='')
+	#end
+	<input type="hidden" name="hrelaxsametitle" id="hrelaxsametitle" value=$hrelaxsametitle>
+
+	#if($!esc.html($params.get('hrelaxlistof')))
+		#set($hrelaxlistof=$!esc.html($params.get('hrelaxlistof')))
+	#else
+		#set($hrelaxlistof='')
+	#end
+	<input type="hidden" name="hrelaxlistof" id="hrelaxlistof" value=$hrelaxlistof>
+
+	#if($!esc.html($params.get('hrelaxdisambig')))
+		#set($hrelaxdisambig=$!esc.html($params.get('hrelaxdisambig')))
+	#else
+		#set($hrelaxdisambig='')
+	#end
+	<input type="hidden" name="hrelaxdisambig" id="hrelaxdisambig" value=$hrelaxdisambig>
+
+	#if($!esc.html($params.get('hrelaxner')))
+		#set($hrelaxner=$!esc.html($params.get('hrelaxner')))
+	#else
+		#set($hrelaxner='')
+	#end
+	<input type="hidden" name="hrelaxner" id="hrelaxner" value=$hrelaxner>
+
+	<!--<font size=3>Title Search? </font> 
+	#if($!esc.html($params.get('titlesearch')) && $!esc.html($params.get('titlesearch'))=="on")
+		<input type="checkbox" id="titlesearch" name="titlesearch" checked>
+	#else
+		<input type="checkbox" id="titlesearch" name="titlesearch">
+	#end-->
+	#if($!esc.html($params.get('hwikiextraq')))
+		#set($hwikiextraq=$!esc.html($params.get('hwikiextraq')))
+	#else
+		##set($hwikiextraq="AND+NOT+title%3Alist*+AND+NOT+title%3Aindex*+AND+NOT+title%3A*disambiguation*")
+		#set($hwikiextraq="")
+	#end
+	<input type="hidden" name="hwikiextraq" id="hwikiextraq" value=$hwikiextraq>
       </span>
+      #*
       <div class="query-boost">
         <span #annTitle("Add the boost function &bf=price to the query")>
           <input type="checkbox" name="bf" value="price"
@@ -23,14 +650,16 @@
       #parse("query_spatial.vm")
       #parse("query_group.vm")
       </div>
+      *#
   </div>
-
+  	#*
     #if($request.params.get('debugQuery'))
       <input type="hidden" name="debugQuery" value="true"/>
     #end
     #if($annotate == true)
       <input type="hidden" name="annotateBrowse" value="true"/>
     #end
+    
     #foreach($fq in $request.params.getParams('fq'))
       #if ($fq != "{!bbox}")
         <input type="hidden" name="fq" id="allFQs" value="$esc.html($fq)"/>
@@ -54,11 +683,13 @@
         <a href="#" onclick='jQuery(this).siblings("div").toggle(); return false;'>toggle parsed query</a>
         <div class="parsed_query" style="display:none">$response.response.debug.parsedquery</div>
       #end
-      #set($queryOpts = $request.params.get("queryOpts"))
-      #if($queryOpts && $queryOpts != "")
-        <input type="hidden" name="queryOpts" value="$queryOpts"/>
-      #end
+      #if($params.get("analytic"))
+		  #set($analytic = $params.get("analytic"))
+      #else
+		  #set($analytic = "explore")
+      #end      
     </div>
-
+    *#
+    <input type=hidden name="analytic" id="analytic" value="$analytic"/>
   </form>
 </div>

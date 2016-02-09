@@ -8,6 +8,8 @@
 ## * supportedMimeTypes, AKA supportedtypes
 ## * mimeExtensionsMap, AKA extMap
 
+#set($docId = $doc.getFieldValue('id'))
+
 ## Title
 #if($doc.getFieldValue('title'))
   #set($title = $esc.html($doc.getFirstValue('title')))
@@ -21,7 +23,8 @@
 #elseif($doc.getFieldValue('resourcename'))
   #set($url = "file:///$doc.getFieldValue('resourcename')")
 #else
-  #set($url = "$doc.getFieldValue('id')")
+  ##set($url = "$doc.getFieldValue('id')")
+  #set($url = 'https://www.google.com/patents/US'+$doc.getFieldValue('publication_doc_number'))  
 #end
 
 ## Sort out Mime-Type
@@ -53,25 +56,33 @@
 <div class="result-title">
   ## Icon
   ## Small file type icons from http://www.splitbrain.org/projects/file_icons (public domain)
-  <img src="#{url_root}/img/filetypes/${filetype}.png" align="center">
+  <!--img src="#{url_root}/img/filetypes/${filetype}.png" align="center"-->
 
   ## Title, hyperlinked
-  <a href="${url}" target="_blank">
-    <b>$title</b></a>
+  <b><a href="${url}" target="_blank">
+    $title</b></a> #field('id') 
+    (
+    #set($assignee = $doc.getFieldValue('assignee_orgname')[0])
+    #if($assignee.length()!=0)
+      $assignee
+    #else
+      #field('assignee_addressbook_orgname')
+    #end
+    )</b>
 
-  ## Link for MLT / More Like This / Find Similar
+  #*## Link for MLT / More Like This / Find Similar
   <span class="mlt">
     #if($params.getBool('mlt', false) == false)
       <a href="#lensNoQ&q=id:%22$docId%22&mlt=true">
         More Like This</a>
     #end
-  </span>
+  </span>*#
 
 </div>
 
 ## Row 2?: ID / URL
 <div>
-  Id: #field('id')
+  ##Publication number: #field('id')
 </div>
 
 ## Resource Name
@@ -79,31 +90,18 @@
   #if($doc.getFieldValue('resourcename'))
     Resource name: $filename 
   #elseif($url)
-    URL: $url
+    ##URL: $url
   #end
   #if($ct)
     ($ct)
   #end
 </div>
 
-## Author
-#if($doc.getFieldValue('author'))
-  <div>
-    Author: #field('author')
-  </div>
-#end
-
-## Last_Modified Date
-#if($doc.getFieldValue('last_modified'))
-  <div>
-    last-modified:
-    #field('last_modified')
-  </div>
-#end
-
 ## Main content of doc
 <div class="result-body">
-  #field('content')
+  <b>Abstract:</b> #field('abstract')
+  ## <br/><b>Description:</b> #field('description')
+  ## <br/><b>Claims:</b> #field('claims')
 </div>
 
 ## Display Similar Documents / MLT = More Like This

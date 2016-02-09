@@ -1,0 +1,20 @@
+<div id=competitors>
+  #foreach($field in $response.facetFields)
+      ##if($field.name=="assignee_orgname" or $field.name=="assignee_addressbook_orgname")
+      #if($field.name=="assignee")
+        #if($field.values.size() > 0)
+          #foreach($facet in $field.values)
+            #if($facet.count > 0)
+              ##if($velocityCount==1)
+                ##set ($max = $facet.count)
+              ##end
+              #set ($size = ($field.values.size()-$velocityCount)/2)
+              #set ($px = "px")
+              ##set ($size = $facet.count/$max*30)
+              <span style="font-size:$size$px">$facet.name</span>$facet.count&nbsp;&nbsp;&nbsp;&nbsp;
+            #end
+          #end
+        #end
+      #end
+    #end
+</div>

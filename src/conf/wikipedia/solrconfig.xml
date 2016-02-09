@@ -118,6 +118,8 @@
     -->
   <directoryFactory name="DirectoryFactory" 
                     class="${solr.directoryFactory:solr.NRTCachingDirectoryFactory}">
+  <!--directoryFactory name="DirectoryFactory" 
+                    class="${solr.directoryFactory:solr.RAMDirectoryFactory}"-->                  
     
          
     <!-- These will be used if you are using the solr.HdfsDirectoryFactory,
@@ -630,7 +632,7 @@
         then documents 0 through 49 will be collected and cached.  Any further
         requests in that range can be satisfied via the cache.  
      -->
-   <queryResultWindowSize>20</queryResultWindowSize>
+   <queryResultWindowSize>0</queryResultWindowSize>
 
    <!-- Maximum number of documents to cache for any entry in the
         queryResultCache. 
@@ -957,7 +959,7 @@
        (SearchHandler) can be registered multiple times with different
        names (and different init parameters)
     -->
-  <requestHandler name="/browse" class="solr.SemanticSearchHandler">
+  <requestHandler name="/browse" class="solr.SearchHandler"><!--class="solr.SemanticSearchHandler">-->
      <lst name="defaults">
        <str name="echoParams">explicit</str>
 
@@ -1000,14 +1002,12 @@
        <str name="f.publication_date.facet.range.other">after</str>-->
 
        <!-- Highlighting defaults -->
-       <str name="hl">on</str>
-       <str name="hl.fl">title abstract</str>
+       <!--str name="hl">on</str>
+       <str name="hl.fl">alltext</str>
        <str name="hl.encoder">html</str>
-       <str name="f.title.hl.simple.pre">&lt;strong&gt;</str>
-       <str name="f.title.hl.simple.post">&lt;/strong&gt;</str>
-       <str name="f.abstract.hl.simple.pre">&lt;b&gt;</str>
-       <str name="f.abstract.hl.simple.post">&lt;/b&gt;</str>
-       <int name="hl.fragsize">-1</int>
+       <str name="hl.simple.pre">&lt;b&gt;</str>
+       <str name="hl.simple.post">&lt;/b&gt;</str>
+       <int name="hl.fragsize">-1</int-->
 
        <!-- Highlighting defaults 
        <str name="hl">on</str>
