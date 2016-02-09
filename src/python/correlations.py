@@ -167,6 +167,9 @@ elif len(sys.argv)>=4:
                 bestmu_str = ""
                 for line in fin.readlines():
                     if len(line)>1:
+                        if len(line.split(","))!=3:
+                            print "error"
+                            continue
                         score = float((line.split(",")[2]).replace(os.linesep,""))
                         if math.isnan(score):
                             score = 0
