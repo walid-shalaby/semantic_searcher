@@ -118,6 +118,7 @@
    <field name="id" type="string" indexed="true" stored="true" required="true" multiValued="false" /> 
    <field name="title" type="text_general" indexed="true" stored="true" required="true" omitNorms="false" />
    <field name="title_ngrams" type="int" indexed="true" stored="true"/>
+   <field name="pagerank" type="double" indexed="true" stored="true"/>
    <field name="anchor" type="text_general" indexed="true" stored="true" multiValued="true" omitNorms="false" />
    <field name="text" type="text_general" indexed="true" stored="false" omitNorms="false" />
    <field name="length" type="int" indexed="true" stored="true"/>
