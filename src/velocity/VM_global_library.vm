@@ -51,6 +51,12 @@
 #if($request.params.get('hincludeq'))
 &hincludeq=$request.params.get('hincludeq')
 #end
+#if($request.params.get('hpagerankweight'))
+&hpagerankweight=$request.params.get('hpagerankweight')
+#end
+#if($request.params.get('hfreetext'))
+&hfreetext=$request.params.get('hfreetext')
+#end
 #if($request.params.get('showrecords'))
 &showrecords=$request.params.get('showrecords')
 #end
@@ -146,6 +152,9 @@
 #end
 #if($request.params.get('hrelaxner'))
 &hrelaxner=$request.params.get('hrelaxner')
+#end
+#if($request.params.get('habsexplicit'))
+&habsexplicit=$request.params.get('habsexplicit')
 #end
 #if($request.params.get('hwikiextraq'))
 &hwikiextraq=$!{esc.url($request.params.get('hwikiextraq'))}

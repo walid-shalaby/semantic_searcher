@@ -22,7 +22,8 @@
     ## For each doc in this cluster
     #foreach ($cluDoc in $docs)
       <li>
-        <a href="#url_for_home?q=id:$cluDoc">
+        ##<a href="#url_for_home?q=patent_id:$cluDoc">
+        <a href="#url_for_cluster_filter("patent_id", $cluDoc)">
           $cluDoc</a>
       </li>
     #end

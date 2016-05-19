@@ -1,33 +1,138 @@
-#**
- *  Main entry point into the /browse templates
- *#
-
+<!DOCTYPE HTML>
 #set($searcher = $request.searcher)
 #set($params = $request.params)
 #set($clusters = $response.response.clusters)
 #set($mltResults = $response.response.get("moreLikeThis"))
 #set($annotate = $params.get("annotateBrowse"))
-#parse('query_form.vm')
-#parse('did_you_mean.vm')
+#parse ("titles.vm")
+##parse('query_form.vm')
+##parse('did_you_mean.vm')
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <title>Mined Semantic Analysis for Patent Analytics</title>
+        <link rel="stylesheet" type="text/css" href="#{url_for_solr}/admin/file?file=/velocity/main.css&contentType=text/css"/>
+        <link rel="stylesheet" href="//ajax.googleapis.com/ajax/libs/dojo/1.10.4/dijit/themes/claro/claro.css" media="screen">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.5/d3.min.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/dojo/1.10.4/dojo/dojo.js"
+    data-dojo-config="async:true, parseOnLoad:true">
+  </script>
+  <script>
+      require(["dojo/parser", "dijit/layout/BorderContainer", "dijit/layout/TabContainer",
+    "dijit/layout/ContentPane"]);
+  </script>
+    </head>
+    <body class="claro">
+    <div
+      id="appLayout" class="demoLayout"
+      data-dojo-type="dijit/layout/BorderContainer"
+      data-dojo-props="design: 'headline'">
+      <div
+        class="edgePanel"
+        data-dojo-type="dijit/layout/ContentPane"
+        data-dojo-props="region: 'top'" style="padding:0; margin:0; height: 6%">
+        <div id="header">
+          #parse("header.vm")
+        </div>
+      </div>
+      <div
+        class="edgePanel"
+        data-dojo-type="dijit/layout/ContentPane"
+        data-dojo-props="region: 'top'" style="width: 100%">
+        <div id="tabs">
+          #parse("tabs.vm")
+        </div>
+      </div>
+      <div
+        id="leftQuery" class="edgePanel"
+        data-dojo-type="dijit/layout/ContentPane" style="padding:0; margin:0; width: 15%"
+        data-dojo-props="region: 'left', splitter: true">
+          #parse("query_form.vm")
+      </div>
+      #if($params.get('q'))
+        #if($analytic=="explore")
+          #set( $width = "86%" )
+        #else
+          #set( $width = "28%" )
+        #end
+        <div
+          id="leftCol" class="edgePanel"
+          data-dojo-type="dijit/layout/ContentPane" style="width: $width"
+          data-dojo-props="region: 'left', splitter: true" style="padding:0; margin:0;" >
+            #if($params.get('analytic')=="relatedness")
+              #parse("semantic_relatedness.vm")
+            #else
+              #parse("semantic_concepts.vm")
+            #end
+        </div>
+        #if($analytic!="explore")
+        <div id="stream_graph_pane"
+          class="centerPanel"
+          data-dojo-type="dijit/layout/ContentPane"
+          data-dojo-props="region: 'center'" style="padding:0; margin:0; height: 42%; width: 54%" >
+          <div
+          class="demoLayout"
+          data-dojo-type="dijit/layout/BorderContainer"
+          data-dojo-props="region: 'top', design: 'headline'">
+            #if($analytic!="prior")
+            <div
+            class="edgePanel"
+            data-dojo-type="dijit/layout/ContentPane"
+            data-dojo-props="region: 'center'">
+              <div
+              class="centerPanel"
+              data-dojo-type="dijit/layout/ContentPane"
+              data-dojo-props="region: 'center'">
+                <div>
+                #if(($params.get('analytic')=="landscape" || $params.get('analytic')=="competitive") && $response.response.facet_counts)## && $page.results_found>0)
+                  #set($graph = 'stream_year')
+                  #parse('stream_graph.vm')              
+                #end
+                </div>
+              </div>
+            </div>
+            #end
+            #if($analytic=="prior")
+              #set($height = "95%")
+              #set($region = "top")
+            #else
+              #set($height = "38%")
+              #set($region = "bottom")
+            #end            
 
-<div class="navigators">
-  #parse("facets.vm")
-</div>
+            #if(($params.get('analytic')=="prior" || $params.get('analytic')=="competitive" || ($params.get('analytic')=="landscape" && $params.get('showrecords')=="on")) &&  $params.get('q'))
+            <div
+              class="edgePanel" style="height: $height"
+              data-dojo-type="dijit/layout/ContentPane"
+              data-dojo-props="region: '$region', splitter: true">              
+              #if($params.get('analytic')=="competitive")
+                #parse("competitors.vm")
+              #else
+                  <div class="pagination">
+                    #parse("pagination_top.vm")
+                  </div>
+                
+                ## Show Error Message, if any
+                <div class="error">
+                  #parse("error.vm")
+                </div>
 
-<div class="pagination">
-  #parse("pagination_top.vm")
-</div>
+                ## Render Results, actual matching docs
+                <div class="results">
+                  ##parse("facet_pivot.vm")
+		  #parse("results_list.vm")
+                </div>
 
-## Show Error Message, if any
-<div class="error">
-  #parse("error.vm")
-</div>
-
-## Render Results, actual matching docs
-<div class="results">
-  #parse("results_list.vm")
-</div>
-
-<div class="pagination">
-  #parse("pagination_bottom.vm")
-</div>
+                  <div class="pagination">
+                    #parse("pagination_bottom.vm")
+                  </div>
+              #end
+            </div>
+            #end
+          </div>        
+        </div>
+        #end      
+    #end                  
+    </div>
+</body>
+</html>

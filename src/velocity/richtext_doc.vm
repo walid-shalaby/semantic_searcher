@@ -17,6 +17,12 @@
   #set($title = "["+$doc.getFieldValue('id')+"]")
 #end
 
+#if($doc.getFieldValue('tags'))
+  #set($tags = $esc.html($doc.getFieldValues('tags')))
+#else
+  #set($tags = "")
+#end
+
 ## URL
 #if($doc.getFieldValue('url'))
   #set($url = $doc.getFieldValue('url'))
@@ -59,7 +65,7 @@
   <!--img src="#{url_root}/img/filetypes/${filetype}.png" align="center"-->
 
   ## Title, hyperlinked
-  <b><a href="${url}" target="_blank">
+  <b><a href="${url}" title="$tags" target="_blank">
     $title</b></a> #field('id') 
     (
     #set($assignee = $doc.getFieldValue('assignee_orgname')[0])

@@ -3,15 +3,36 @@
  *#
 
 #set( $analytic = $params.get("analytic") )
-#set( $defminwikilen = 0 )
+#set( $defminwikilen = 1000 )
+#set( $defminwikiseelen = 0 )
 
 <script>
 function changeRange(element, val) {
 	document.getElementById(element).value=parseInt(document.getElementById(element).value)+val;
 }
+
+function onSubmit() {
+	if(document.getElementById("analytic").value=="landscape" || 
+	document.getElementById("analytic").value=="prior") {
+		if(document.getElementById("hupdateconcepts").checked==false) {
+		var ignore = document.getElementById("ignsem");
+		svg.selectAll("g.sem_node").each(function(d,i){
+		var text = svg.selectAll("#sem_text"+d.nid);
+      if(d.name!="more..." && d.name!="" && text.style("text-decoration") != "underline") {
+        var option = document.createElement("option");
+		option.text = encodeURIComponent(d.name);
+		option.selected = true;
+		ignore.add(option);		
+      }
+      });
+	}
+	}
+	return true;
+}
+
 </script>
 <div class="query-box">
-  <form id="query-form" action="#{url_for_home}" method="GET" onsubmit="">
+  <form id="query-form" action="#{url_for_home}" method="GET" onsubmit="return onSubmit();">
     <div class="inputs">
       <span #annTitle("Add the query using the &q= parameter")>
         <!--Find: -->
@@ -37,7 +58,7 @@ function changeRange(element, val) {
 				</tr>
 				<tr>
 				<td>
-					<input type="checkbox" name="hincludeq" #if($params.get('hincludeq') || !$params.get('q'))checked#end  />Include Query	
+					<input type="checkbox" name="hincludeq" #if($params.get('hincludeq')=='on' || !$params.get('q'))checked#end  />Include Query	
 				</td>
 				</tr>				
 
@@ -54,7 +75,7 @@ function changeRange(element, val) {
 					#if($!esc.html($params.get('conceptsmethod')))
 						#set($selected=$!esc.html($params.get('conceptsmethod')))
 					#else
-						#set($selected = "MSA_seealso")
+						#set($selected = "MSA_seealso_asso")
 					#end
 					##foreach ($i in ["Explicit","MSA_anchors","MSA_seealso","MSA_seealso_asso","MSA_anchors_seealso","MSA_anchors_seealso_asso"])
 					#set( $method = {"Explicit" : "Explicit", "MSA_seealso" : "MSA1", "MSA_seealso_asso" : "MSA2"} )
@@ -78,7 +99,7 @@ function changeRange(element, val) {
 					#else
 						#set($selected = 20)
 					#end
-					#foreach ($i in [0..100])
+					#foreach ($i in [0..200])
 						#if($i==$selected)
 							<option selected>$i</option>
 						#else
@@ -100,11 +121,12 @@ function changeRange(element, val) {
 							<input type="checkbox" name="searchclaims" #if($params.get('searchclaims') || !$params.get('q'))checked#end />Claims<br/>
 						</fieldset>
 				</td>
-				</tr>					
+				</tr>				
 			</table>
-						
+			
+
 		#elseif($analytic=="competitive")			
-			#set($default='e.g. IBM')
+			#set($default='e.g. Toyota')
 			<table class="query-table">
 				<tr>
 					<td>
@@ -116,6 +138,19 @@ function changeRange(element, val) {
 	        			<input type="submit" value="Analyze" id="querySubmit"/>
 	        		</td>
 				</tr>
+
+				<tr>
+				<td>
+					<input type="checkbox" name="hfreetext" #if($params.get('hfreetext')=='on')checked#end  />Free text	
+				</td>
+				</tr>
+
+				<tr>
+				<td>
+					<input type="checkbox" name="hincludeq" #if($params.get('hincludeq')=='on')checked#end  />Include Query	
+				</td>
+				</tr>
+
 				<tr>
 				<td align="center">
 					<br/>
@@ -128,7 +163,7 @@ function changeRange(element, val) {
 						#if($!esc.html($params.get('conceptsmethod')))
 							#set($selected=$!esc.html($params.get('conceptsmethod')))
 						#else
-							#set($selected = "MSA_seealso")
+							#set($selected = "MSA_seealso_asso")
 						#end
 						##foreach ($i in ["Explicit","MSA_anchors","MSA_seealso","MSA_seealso_asso","MSA_anchors_seealso","MSA_anchors_seealso_asso"])
 						#set( $method = {"Explicit" : "Explicit", "MSA_seealso" : "MSA1", "MSA_seealso_asso" : "MSA2"} )
@@ -151,7 +186,7 @@ function changeRange(element, val) {
 					#else
 						#set($selected = 20)
 					#end
-					#foreach ($i in [0..100])
+					#foreach ($i in [0..200])
 						#if($i==$selected)
 							<option selected>$i</option>
 						#else
@@ -170,7 +205,7 @@ function changeRange(element, val) {
 					#else
 						#set($selected = 50)
 					#end
-					#foreach ($i in [0..100])
+					#foreach ($i in [0..200])
 						#if($i==$selected)
 							<option selected>$i</option>
 						#else
@@ -229,7 +264,7 @@ function changeRange(element, val) {
 				<tr>
 				<td>
 					<!--input type="checkbox" name="hincludeq" #if($params.get('hincludeq') || !$params.get('q'))checked#end  /-->
-					<input type="checkbox" name="hincludeq" #if($params.get('hincludeq'))checked#end  />Include Query	
+					<input type="checkbox" name="hincludeq" #if($params.get('hincludeq')=='on')checked#end  />Include Query	
 				</td>
 				</tr>
 
@@ -240,7 +275,7 @@ function changeRange(element, val) {
 					#if($!esc.html($params.get('conceptsmethod')))
 						#set($selected=$!esc.html($params.get('conceptsmethod')))
 					#else
-						#set($selected = "MSA_seealso")
+						#set($selected = "MSA_seealso_asso")
 					#end
 					##foreach ($i in ["Explicit","MSA_anchors","MSA_seealso","MSA_seealso_asso","MSA_anchors_seealso","MSA_anchors_seealso_asso"])
 					#set( $method = {"Explicit" : "Explicit", "MSA_seealso" : "MSA1", "MSA_seealso_asso" : "MSA2"} )
@@ -264,7 +299,7 @@ function changeRange(element, val) {
 					#else
 						#set($selected = 20)
 					#end
-					#foreach ($i in [0..100])
+					#foreach ($i in [0..200])
 						#if($i==$selected)
 							<option selected>$i</option>
 						#else
@@ -334,7 +369,7 @@ function changeRange(element, val) {
 			#else
 				#set($selected = 500)
 			#end
-			#foreach ($i in [0..100])
+			#foreach ($i in [0..200])
 				#if($i==$selected)
 					<option selected>$i</option>
 				#else
@@ -374,7 +409,7 @@ function changeRange(element, val) {
 					#if($!esc.html($params.get('conceptsmethod')))
 						#set($selected=$!esc.html($params.get('conceptsmethod')))
 					#else
-						#set($selected = "MSA_seealso")
+						#set($selected = "MSA_seealso_asso")
 					#end
 					##foreach ($i in ["Explicit","MSA_anchors","MSA_seealso","MSA_seealso_asso","MSA_anchors_seealso","MSA_anchors_seealso_asso"])
 					#set( $method = {"Explicit" : "Explicit", "MSA_seealso" : "MSA1", "MSA_seealso_asso" : "MSA2"} )
@@ -398,7 +433,26 @@ function changeRange(element, val) {
 					#else
 						#set($selected = 20)
 					#end
-					#foreach ($i in [0..100])
+					#foreach ($i in [0..200])
+						#if($i==$selected)
+							<option selected>$i</option>
+						#else
+							<option>$i</option>
+						#end
+					#end
+					</select>
+				</td>
+				</tr>
+				<tr>
+				<td>
+					Levels:
+					<select id="hmaxlevels" name="hmaxlevels">
+					#if($!esc.html($params.get('hmaxlevels')))
+						#set($selected=$!esc.html($params.get('hmaxlevels')))
+					#else
+						#set($selected = 2)
+					#end
+					#foreach ($i in [2..20])
 						#if($i==$selected)
 							<option selected>$i</option>
 						#else
@@ -458,7 +512,7 @@ function changeRange(element, val) {
 					#if($!esc.html($params.get('hminseealsolen')))
 						#set($minseealsolen = $params.get('hminseealsolen'))
 					#else
-						#set($minseealsolen = $defminwikilen)
+						#set($minseealsolen = $defminwikiseelen)
 					#end
 					<button type="button" onclick=changeRange("hminseealsolen",-1)>-</button>
 					<input class="rangelbl" name="hminseealsolen" id="hminseealsolen" value=$minseealsolen />
@@ -480,6 +534,11 @@ function changeRange(element, val) {
 					<button type="button" onclick=changeRange("hminassocnt",1)>+</button>
 				</td>
 			</tr>
+			<tr>
+				<td>
+					<input type="checkbox" name="hupdateconcepts" id="hupdateconcepts" />Update Concepts	
+				</td>
+			</tr>									
 		</table>		
 	#end
 	#if($!esc.html($params.get('hmaxhits')))
@@ -624,6 +683,20 @@ function changeRange(element, val) {
 	#end
 	<input type="hidden" name="hrelaxner" id="hrelaxner" value=$hrelaxner>
 
+	#if($!esc.html($params.get('hfreetext')))
+		#set($hfreetext=$!esc.html($params.get('hfreetext')))
+	#else
+		#set($hfreetext='')
+	#end
+	<input type="hidden" name="hfreetext" id="hfreetext" value=$hfreetext>
+
+	#if($!esc.html($params.get('hpagerankweight')))
+		#set($hpagerankweight=$!esc.html($params.get('hpagerankweight')))
+	#else
+		#set($hpagerankweight='')
+	#end
+	<input type="hidden" name="hpagerankweight" id="hpagerankweight" value=$hpagerankweight>
+
 	<!--<font size=3>Title Search? </font> 
 	#if($!esc.html($params.get('titlesearch')) && $!esc.html($params.get('titlesearch'))=="on")
 		<input type="checkbox" id="titlesearch" name="titlesearch" checked>
@@ -691,5 +764,10 @@ function changeRange(element, val) {
     </div>
     *#
     <input type=hidden name="analytic" id="analytic" value="$analytic"/>
+    <select style="visibility:hidden" name="ignsem" id="ignsem" multiple="multiple">
+    <option value="abc">abc></option>
+    <option value="def">def</option>
+    </select>
   </form>
 </div>
+

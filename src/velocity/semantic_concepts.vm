@@ -1,6 +1,14 @@
-<div id=conceptstree>
+<div id=conceptstree onclick=mouseoutSemNode()>
+</div>
+<div id=concepts onclick=mouseoutSemNode()>
 </div>
 <script>
+  var levels = 2;
+  var max_children = {};
+  var selected = {};
+  #if($params.get('hmaxlevels') && $params.get('conceptsmethod')=='MSA_seealso_asso')
+   levels = parseInt("$params.get('hmaxlevels')")
+  #end
   function getSemNodeName(key, id, p_id, weight, asso_cnt, docno, length, type) {
     var name = key;
     
@@ -39,27 +47,46 @@
   function addSemNode(concept, name, key, id, p_id, weight, asso_cnt, docno, length, type, ignore,anchors,redirects) {
     if(p_id==concept.nid) {
       if(concept.children) {
-        if(p_id==0 || maxseealsoconcepts==-1 || concept.children.length<maxseealsoconcepts)
+        if(p_id==0 || maxseealsoconcepts==-1 || concept.children.length<maxseealsoconcepts) {
           concept.children.push({"name":name,"nid":id,"docno":docno,"type":type,"ignore":ignore,"asso_cnt":parseInt(asso_cnt),"length":parseInt(length),"weight":parseFloat(weight),"anchors":anchors,"redirects":redirects});
+          }
           allconcepts++;
         }
-      else
+      else {
         concept.children = [{"name":name,"nid":id,"type":type,"asso_cnt":parseInt(asso_cnt),"ignore":ignore,"length":parseInt(length),"docno":docno,"weight":parseFloat(weight),"anchors":anchors,"redirects":redirects}];
         allconcepts++;
+      }
       return true;
     }
     else if(concept.children) {
-      for (var i=0; i<concept.children.length; i++) {
+      for (var i=0; i<concept.children.length; i++) { 
+      if(concept.children[i].nid==p_id) {
+      if(concept.children[i].children==null || 
+        (concept.children[i].children.length%max_children[""+p_id]!=0 && 
+        concept.children[i].children[concept.children[i].children.length-1].name!="more...")) {
         if(addSemNode(concept.children[i], name, key, id, p_id, weight, asso_cnt, docno, length, type, ignore,anchors,redirects)==true) {
-          allconcepts++;
           return true;
         }
       }
+      else {
+        if(concept.children[i].children.length%max_children[""+p_id]==0) {
+            concept.children[i].children.push({"name":"more...","nid":"",pnid:p_id,"docno":"","type":"","ignore":"","asso_cnt":-1,"length":-1,"weight":0,"anchors":"","redirects":""});
+          }
+          if(selected[id]) {
+          var div = document.getElementById('concepts');
+        #if($analytic!="explore")
+        div.innerHTML = div.innerHTML + "<div id='"+id+"_"+name+"' class='dialog' onclick=removeSemNodeText(this.id)><a href='#' class='close-thik'>"+name+"</a></div>";
+        #end
+        }
+        return true;
+        }
+      }
+      }
     }
-    return false;
+    return false;    
   }
 
-  function update(source) {
+  function update(source,duration) {
 
     // Compute the new tree layout.
     var sem_nodes = sem_tree.nodes(root).reverse(),
@@ -89,25 +116,32 @@
       #end
 
     nodeEnter.append("svg:a")
-    .attr("xlink:href", function(d){return "http://www.wikipedia.org/wiki?curid="+d.docno;})
+    ##.attr("xlink:href", function(d){return "http://www.wikipedia.org/wiki?curid="+d.docno;})
+    ##.attr("xlink:href", "#")
     .attr("target", "_blank")
     .append("text")
-        .attr("id", function(_,i) {return "sem_text"+i;})
+        .attr("id", function(d,i) {return "sem_text"+d.nid;})
       .attr("x", function(d) { return d.children || d._children ? -10 : 10; })
         .attr("dy", ".35em")
         .attr("text-anchor", function(d) { return d.children || d._children ? "end" : "start"; })
-        .attr("text-decoration", function(d) { return d.ignore && d.ignore==1 ? "line-through" : "none"; })      
+        //.attr("text-decoration", function(d) { return d.ignore && d.ignore==1 ? "line-through" : "none"; })
+        //.attr("text-decoration", function(d) { return selected[d.nid]==true ? "underline" : "none"; })
+        //.style("font-weight", function(d) { return selected[d.nid]==true ? "bold" : "normal"; })        
         .text(function(d) { return d.name; })
         .style("fill-opacity", 1e-6)
         .on("mouseover", mouseoverSemNode)
         .on("mousemove", mousemoveSemNode)
-        .on("mouseout", mouseoutSemNode);
+        .on("mouseout", mouseoutSemNode)
+        .on("contextmenu", rclickSemNodeText)
+        .on("click", clickSemNodeText);
 
     nodeEnter.append("svg:text")
       .style("text-anchor", "middle")
       //.style("font-size", function(d) {return d.weight?""+(100*d.weight/max_weight)+"px":"0px";})
       .attr("dy", ".35em")
       .text(function(d) {return d._children? "+" : d.children? "-":"";})
+      .on("click", clickSemNode)
+      .on("contextmenu", rclickSemNode)
       .style("fill-opacity", 1);
 
     // Transition nodes to their new position.
@@ -178,16 +212,17 @@
   // Display tooltip on mouseover
   function mouseoverSemNode(d) {
     //d3.select(this).attr("stroke","black")
-         
-      tooltip.html(getSemNodeDescription(d));
-      return tooltip.transition()
-        .duration(50)
-        .style("z-index", "10")
-        .style("opacity", 0.9);
+      if(d.name!="more...") {   
+        tooltip.html(getSemNodeDescription(d));
+        return tooltip.transition()
+          .duration(50)
+          .style("z-index", "10")
+          .style("opacity", 0.9);
+        }
   }
 
   // Hide tooltip on mouseout
-  function mouseoutSemNode(d) {
+  function mouseoutSemNode(_) {
       return tooltip
         .style("z-index", "-1")
         .style("opacity", 0);
@@ -211,23 +246,86 @@
       d.children = d._children;
       d._children = null;
     }
-    update(d);
+    update(d,750);
+  }
+
+  // Toggle children on click.
+  function rclickSemNodeText(d){
+    d3.event.preventDefault();
+    window.open("http://www.wikipedia.org/wiki?curid="+d.docno,"_blank");
+  }
+
+  function clickSemNodeText(d,i) {
+    return clickSemNodeText(d,i,false);
+  }
+  function clickSemNodeText(d,i,select) {  
+    if(d.name=="more...") {
+      allconcepts = 0;
+      max_children[""+d.pnid] += 5;
+      concepts.children = [];
+      #foreach( $c in $response.response.semantic_concepts )
+        var name =  getSemNodeName("$c.key","$c.value.id","$c.value.p_id","$c.value.weight","$c.value.asso_cnt","$c.value.docno","$c.value.length","$c.value.type");
+        var added =  addSemNode(concepts,name,"$c.key","$c.value.id","$c.value.p_id","$c.value.weight","$c.value.asso_cnt","$c.value.docno","$c.value.length","$c.value.type","$c.value.ignore","$c.value.anchors","$c.value.redirects");
+        if(added==false) {
+          concepts.children.push({"name":name,"nid":"$c.value.id","docno":"$c.value.docno","weight":parseFloat("$c.value.weight"),"value":"$c.value","ignore":"$c.value.ignore","type":"$c.value.type","asso_cnt":"$c.value.asso_cnt","length":parseInt(length),"anchors":"$c.value.anchors","redirects":"$c.value.redirects"});
+          allconcepts++;
+        }
+      #end
+      height = 30*allconcepts - margin.top - margin.bottom;
+      update(root,0);
+      sem_tree.size([height, width]);
+      svg.selectAll("g.sem_node").each(function(d,i){
+        if(selected[d.nid]==true){        
+          clickSemNodeText(d,i,true);
+        }
+      });
+    }
+    else {
+      var text = svg.selectAll("#sem_text"+d.nid);
+      if(select==false && text.style("text-decoration") == "underline") {
+        removeSemNodeText(""+d.nid+"_"+d.name)
+        selected[d.nid] = false;
+      }
+      else {
+        #if($analytic!="explore")
+        text.style("text-decoration", "underline");
+        text.style("font-weight", "bold");
+        if(select==false) {
+        var div = document.getElementById('concepts');
+        div.innerHTML = div.innerHTML + "<div id='"+d.nid+"_"+d.name+"' class='dialog' onclick=removeSemNodeText(this.id)><a href='#' class='close-thik'>"+d.name+"</a></div>";
+        selected[d.nid] = true;        
+        }
+        #end
+      }
+    }
+  }
+
+  function removeSemNodeText(id) {
+    var i = id.substring(0,id.indexOf('_'));
+    var name = id.substring(id.indexOf('_')+1);
+    var parent = document.getElementById("concepts");
+    var child = document.getElementById(id);
+    parent.removeChild(child);
+    var text = svg.selectAll("#sem_text"+i);
+    text.style("text-decoration", "none");
+    text.style("font-weight", "normal");
+    selected[i] = false;
   }
 
   // Delete on rclick.
   function rclickSemNode(d,i) {
     d3.event.preventDefault();
-    var text = svg.selectAll("#sem_text"+i);
+    var text = svg.selectAll("#sem_text"+d.nid);
     var url = window.location.href;
     url = url.replace(/&fqs=class:[0-9a-zA-Z]+?&/g,""); 
     if(d.ignore && d.ignore==1) {
-    text.style("text-decoration", "none");
+    ##text.style("text-decoration", "none");
     d.ignore = 0;
     url = url.replace("&ignsem="+encodeURIComponent(d.name),"");
     window.location.href = url;
     }
     else {
-    text.style("text-decoration", "line-through");
+    ##text.style("text-decoration", "line-through");
     d.ignore = 1;
     window.location.href = url+"&ignsem="+d.name;
    } 
@@ -238,15 +336,34 @@
   #if($!esc.html($params.get('hmaxseealsoconcepts')))
     maxseealsoconcepts = parseInt($!esc.html($params.get('hmaxseealsoconcepts')));
   #end
+  ##var concepts = {"name":"$!esc.html($params.get('q'))","nid":"0","type":"root",children:[]};
+  var concepts = {"name":"","nid":"0","type":"root","docno":"",children:[]};
 
+  // add concepts
+  var max_weight = 0.0;
+  #foreach( $c in $response.response.semantic_concepts )
+    if($velocityCount==1)
+        max_weight = parseFloat("$c.value.weight");
+
+    if("$c.value.ignore"!=1) {
+      selected[parseInt("$c.value.id")] = true;
+    }
+    var name =  getSemNodeName("$c.key","$c.value.id","$c.value.p_id","$c.value.weight","$c.value.asso_cnt","$c.value.docno","$c.value.length","$c.value.type");
+    max_children["$c.value.id"] = 5;
+    var added =  addSemNode(concepts,name,"$c.key","$c.value.id","$c.value.p_id","$c.value.weight","$c.value.asso_cnt","$c.value.docno","$c.value.length","$c.value.type","$c.value.ignore","$c.value.anchors","$c.value.redirects");
+    if(added==false) {
+      concepts.children.push({"name":name,"nid":"$c.value.id","docno":"$c.value.docno","weight":parseFloat("$c.value.weight"),"value":"$c.value","ignore":"$c.value.ignore","type":"$c.value.type","asso_cnt":"$c.value.asso_cnt","length":parseInt(length),"anchors":"$c.value.anchors","redirects":"$c.value.redirects"});
+      allconcepts++;
+    }
+  #end
   var margin = {top: 20, right: 10, bottom: 20, left: 10},
-      width = 700 - margin.right - margin.left,
-      height = 30*$response.response.semantic_concepts.size() - margin.top - margin.bottom;
+      width = (levels*2)*200 - margin.right - margin.left,
+      //height = 30*$response.response.semantic_concepts.size() - margin.top - margin.bottom;
+      height = 30*allconcepts - margin.top - margin.bottom;
       //height = 25*allconcepts - margin.top - margin.bottom;
       //height = 800 - margin.top - margin.bottom;
 
   var i = 0,
-      duration = 750,
       root;
 
   var sem_tree = d3.layout.tree()
@@ -257,7 +374,7 @@
 
   var svg = d3.select("#conceptstree").append("svg")
       .attr("width", width + margin.right + margin.left)
-      .attr("height", height + margin.top + margin.bottom)
+      .attr("height", 30*$response.response.semantic_concepts.size())
     .append("g")
       .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
 
@@ -268,21 +385,6 @@
       .style("z-index", "10")
       .style("opacity", 0);
 
-  ##var concepts = {"name":"$!esc.html($params.get('q'))","nid":"0","type":"root",children:[]};
-  var concepts = {"name":"","nid":"0","type":"root",children:[]};
-
-  // add concepts
-  var max_weight = 0.0;
-
-  #foreach( $c in $response.response.semantic_concepts )
-    if($velocityCount==1)
-        max_weight = parseFloat("$c.value.weight");
-
-    var name =  getSemNodeName("$c.key","$c.value.id","$c.value.p_id","$c.value.weight","$c.value.asso_cnt","$c.value.docno","$c.value.length","$c.value.type");    
-    var added =  addSemNode(concepts,name,"$c.key","$c.value.id","$c.value.p_id","$c.value.weight","$c.value.asso_cnt","$c.value.docno","$c.value.length","$c.value.type","$c.value.ignore","$c.value.anchors","$c.value.redirects");
-    if(added==false)
-      concepts.children.push({"name":name,"nid":"$c.value.id","docno":"$c.value.docno","weight":parseFloat("$c.value.weight"),"value":"$c.value","ignore":"$c.value.ignore","type":"$c.value.type","asso_cnt":"$c.value.asso_cnt","length":parseInt(length),"anchors":"$c.value.anchors","redirects":"$c.value.redirects"});
-  #end
     #if($!esc.html($params.get('habsexplicit')) && $!esc.html($params.get('habsexplicit'))=='on')
       height = 4*allconcepts - margin.top - margin.bottom;
       tree.size([height, width]);
@@ -303,9 +405,13 @@
     }
 
     //root.children.forEach(collapse);
-    update(root);
+    update(root,750);
   //});
-
+  svg.selectAll("g.sem_node").each(function(d,i){
+      if(selected[d.nid]==true){
+        clickSemNodeText(d,i,false);
+     }
+  });
   ##d3.select(self.frameElement).style("height", ""+25*parseInt("$!esc.html($params.get('conceptsno'))"));// "800px");
   d3.select(self.frameElement).style("height", ""+height);
 

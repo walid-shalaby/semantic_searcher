@@ -19,6 +19,7 @@ package org.apache.solr.handler.component;
 
 import java.io.FileWriter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 
@@ -33,8 +34,12 @@ import org.apache.solr.common.util.NamedList;
 import org.apache.solr.common.util.SimpleOrderedMap;
 import org.apache.solr.core.PluginInfo;
 import org.apache.solr.request.SolrQueryRequest;
+import org.apache.solr.response.ResultContext;
 import org.apache.solr.response.SolrQueryResponse;
+import org.apache.solr.search.DocIterator;
+import org.apache.solr.search.DocList;
 import org.apache.solr.search.SyntaxError;
+import org.apache.solr.util.SolrPluginUtils;
 
 import wiki.toolbox.semantic.SemanticSearchConfigParams;
 import wiki.toolbox.semantic.Enums;
@@ -102,7 +107,7 @@ public class SemanticSearchHandler extends SearchHandler
       
       // parse request
       params.wikiUrl = wikiUrl;
-      ParseRequestParams(req, params, qparams);      
+      ParseRequestParams(req, params, qparams);
       
       //req.setParams(qparams);
       
@@ -132,7 +137,7 @@ public class SemanticSearchHandler extends SearchHandler
           
           fillTechLandscapeQParams(newQuery, new String[]{"{!ex=fqs}publication_year,ipc_section"}, new String[]{}, params, qparams);
           
-          qparams.set("fl", new String[]{"id","title","abstract","assignee_orgname","assignee_addressbook_orgname","type","publication_doc_number"});          
+          qparams.set("fl", new String[]{"id","title","abstract","assignee_orgname","assignee_addressbook_orgname","type","publication_doc_number","tags"});          
           req.setParams(qparams);
           super.handleRequestBody(req, rsp);
           qparams.set(CommonParams.Q, orgQ);
@@ -148,40 +153,53 @@ public class SemanticSearchHandler extends SearchHandler
           
           qparams.set(CommonParams.Q, newQuery);
           qparams.set("qf", getQuerySearchFields(params));
-          qparams.set("fl", new String[]{"id","title","abstract","assignee_orgname","assignee_addressbook_orgname","type","publication_doc_number"});
+          qparams.set("fl", new String[]{"id","title","abstract","assignee_orgname","assignee_addressbook_orgname","type","publication_doc_number","tags"});
           req.setParams(qparams);
           super.handleRequestBody(req, rsp);
           qparams.set(CommonParams.Q, orgQ);
           qparams.remove("fq");
+          /*ResultContext results = (org.apache.solr.response.ResultContext)rsp.getValues().get("response");
+          if(results!=null && results.docs!=null & results.docs.size()>0) {
+            SolrDocumentList docs = SolrPluginUtils.docListToSolrDocumentList(results.docs, req.getSearcher(), new HashSet<String>(Arrays.asList("id")), null);
+            for(SolrDocument doc : docs) {
+                System.out.println(doc.getFieldValue("id"));
+              }
+          }*/          
         }
       }
       else if(params.e_analytic_type==Enums.ENUM_ANALYTIC_TYPE.e_CI) {
         String orgQ = req.getParams().get(CommonParams.Q);
+        String techQ = "";
+        if(params.ci_freetext==false) {
+          // construct a new query of given assignee innovations and retrieve them
+          HttpSolrServer server = new HttpSolrServer("http://localhost:"+hostPort+"/solr/collection1/");
+          ModifiableSolrParams innoQParams = new ModifiableSolrParams();
+          innoQParams.set(CommonParams.Q, orgQ.toLowerCase().replace(" not ", " \\not ").replace(" or ", " \\or ").replace(" and ", " \\and "));
+          innoQParams.set("defType","edismax");
+          innoQParams.set("qf", new String[]{"assignee"});
+          innoQParams.set(CommonParams.ROWS, params.ci_patents_num);
+          innoQParams.set("sort", "publication_date desc");
+          
+          // add target extract field
+          String[] extractFields = getQueryExtractFields(params);
+          innoQParams.set("fl", extractFields);
+          QueryResponse innoQResp = server.query(innoQParams);
         
-        // construct a new query of given assignee innovations and retrieve them
-        HttpSolrServer server = new HttpSolrServer("http://localhost:"+hostPort+"/solr/collection1/");
-        ModifiableSolrParams innoQParams = new ModifiableSolrParams();
-        innoQParams.set(CommonParams.Q, orgQ.toLowerCase().replace(" not ", " \\not ").replace(" or ", " \\or ").replace(" and ", " \\and "));
-        innoQParams.set("defType","edismax");
-        innoQParams.set("qf", new String[]{"assignee"});
-        innoQParams.set(CommonParams.ROWS, params.ci_patents_num);
-        innoQParams.set("sort", "publication_date desc");
-        
-        // add target extract field
-        String[] extractFields = getQueryExtractFields(params);
-        innoQParams.set("fl", extractFields);
-        QueryResponse innoQResp = server.query(innoQParams);
-        
-        // loop on results and construct a new query to explore technologies
-        SolrDocumentList results = innoQResp.getResults();
-        if(results!=null && results.size()>0) {
-          String techQ = "";
-          for(int i=0; i<results.size(); i++) {
-            SolrDocument doc = results.get(i);
-            for(String field : extractFields) {
-              techQ += (String)doc.getFieldValue(field) + " ";
-            }              
+          // loop on results and construct a new query to explore technologies
+          SolrDocumentList results = innoQResp.getResults();
+          if(results!=null && results.size()>0) {
+            for(int i=0; i<results.size(); i++) {
+              SolrDocument doc = results.get(i);
+              for(String field : extractFields) {
+                techQ += (String)doc.getFieldValue(field) + " ";
+              }              
+            }
           }
+        }
+        else
+          techQ = orgQ.toLowerCase().replace(" not ", " \\not ").replace(" or ", " \\or ").replace(" and ", " \\and ");
+        
+        if(techQ.length()>0) {
           semanticConceptsInfo = semanticsGenerator.doSemanticSearch(techQ, params);
           System.out.println(techQ);
           
@@ -193,7 +211,7 @@ public class SemanticSearchHandler extends SearchHandler
             newQuery = getNewQuery("", semanticConceptsInfo);
                     
           fillTechLandscapeQParams(newQuery, new String[]{"{!ex=fqs}publication_year,ipc_section"}, 
-              new String[]{"{!ex=fqs}assignee"}, params, qparams);         
+              new String[]{"{!ex=fqs}assignee","{!ex=fqs}assignee_addressbook_orgname_exact","{!ex=fqs}assignee_exact"}, params, qparams);         
           
           req.setParams(qparams);
           super.handleRequestBody(req, rsp);
@@ -366,6 +384,20 @@ public class SemanticSearchHandler extends SearchHandler
     else
       params.hidden_relatedness_experiment = false;
     
+    // get pagerank weighting flag 
+    tmp = req.getParams().get("hpagerankweight");
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.hidden_pagerank_weighting = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (hpagerankweight)");
+      }
+    }
+    else
+      params.hidden_relatedness_experiment = false;
+    
  // get enable title search flag 
     tmp = req.getParams().get("titlesearch");
     if(tmp!=null && tmp.length()>0) {
@@ -396,7 +428,7 @@ public class SemanticSearchHandler extends SearchHandler
     if(ignsem!=null) {
       params.ignored_concepts = new HashSet<String>();
       for(String s : ignsem)
-      params.ignored_concepts.add(s);
+      params.ignored_concepts.add(java.net.URLDecoder.decode(s));
     }
     
     // get fqs if any
@@ -457,7 +489,21 @@ public class SemanticSearchHandler extends SearchHandler
     }
     else
       params.hidden_relax_search = false;
-
+    
+    // get CI freetext flag 
+    tmp = req.getParams().get("hfreetext");
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.ci_freetext = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (hfreetext)");
+      }
+    }
+    else
+      params.ci_freetext = false;
+    
     // get absolute explicit concepts flag 
     tmp = req.getParams().get("habsexplicit");
     if(tmp!=null && tmp.length()>0) {
@@ -470,7 +516,7 @@ public class SemanticSearchHandler extends SearchHandler
       }
     }
     else
-      params.hidden_include_q = false;
+      params.abs_explicit = false;
     
     // get include q flag 
     tmp = req.getParams().get("hincludeq");
@@ -684,6 +730,20 @@ public class SemanticSearchHandler extends SearchHandler
     else
       params.hidden_relax_same_title = false;
     
+    // get relax filtering flag 
+    tmp = req.getParams().get("hrelaxfilters");
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.hidden_relax_filters = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (hrelaxfilters)");
+      }
+    }
+    else
+      params.hidden_relax_filters = false;
+    
     // get relax disambiguation filter flag 
     tmp = req.getParams().get("hrelaxdisambig");
     if(tmp!=null && tmp.length()>0) {
@@ -758,6 +818,21 @@ public class SemanticSearchHandler extends SearchHandler
     }
     else
       params.hidden_max_hits = Integer.MAX_VALUE;
+    
+    // get maximum levels in concept graph
+    tmp = req.getParams().get("hmaxlevels");
+    if(tmp!=null) {
+      if (tmp.matches("\\d+")){
+        params.hidden_max_levels = Integer.parseInt(tmp);
+      }
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (hmaxlevels)");
+      }
+    }
+    else
+      params.hidden_max_levels = 2;
     
     // get maximum hits in initial wiki search
     tmp = req.getParams().get("hminassocnt");
