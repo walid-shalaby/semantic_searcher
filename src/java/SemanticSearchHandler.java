@@ -18,8 +18,10 @@
 package org.apache.solr.handler.component;
 
 import java.io.FileWriter;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 
@@ -115,7 +117,7 @@ public class SemanticSearchHandler extends SearchHandler
       //  super.handleRequestBody(req, rsp);
       //}
 
-      if(params.e_analytic_type==Enums.ENUM_ANALYTIC_TYPE.e_Search) {
+      if(params.e_analytic_type==Enums.ENUM_ANALYTIC_TYPE.e_SEARCH) {
         super.handleRequestBody(req, rsp);
       }
       else if(params.concepts_num>0 && 
@@ -130,8 +132,13 @@ public class SemanticSearchHandler extends SearchHandler
         if(params.e_analytic_type==Enums.ENUM_ANALYTIC_TYPE.e_TECH_LANDSCAPE) {
           // construct new query with concepts added to it
           String newQuery;
-          if(params.hidden_include_q==true)
-            newQuery = getNewQuery(orgQ.toLowerCase().replace(" not ", " \\not ").replace(" or ", " \\or ").replace(" and ", " \\and "), semanticConceptsInfo);
+          if(params.hidden_include_q==true) {
+            String tmpq = orgQ;
+            if(params.hidden_boolean==false)
+              newQuery = getNewQuery(tmpq.toLowerCase().replace(" not ", " \\not ").replace(" or ", " \\or ").replace(" and ", " \\and "), semanticConceptsInfo);
+            else
+              newQuery = getNewQuery(tmpq, semanticConceptsInfo);
+          }
           else
             newQuery = getNewQuery("", semanticConceptsInfo);
           
@@ -146,12 +153,17 @@ public class SemanticSearchHandler extends SearchHandler
         if(params.e_analytic_type==Enums.ENUM_ANALYTIC_TYPE.e_PRIOR) {
           // construct new query with concepts added to it
           String newQuery;
-          if(params.hidden_include_q==true)
-            newQuery = getNewQuery(req.getParams().get(CommonParams.Q).toLowerCase().replace(" not ", " \\not ").replace(" or ", " \\or ").replace(" and ", " \\and "), semanticConceptsInfo);
+          if(params.hidden_include_q==true) {
+            String tmpq = req.getParams().get(CommonParams.Q);
+            if(params.hidden_boolean==false)
+              tmpq = tmpq.toLowerCase().replace(" not ", " \\not ").replace(" or ", " \\or ").replace(" and ", " \\and ");
+            newQuery = getNewQuery(tmpq, semanticConceptsInfo);
+          }
           else
             newQuery = getNewQuery("", semanticConceptsInfo);
           
           qparams.set(CommonParams.Q, newQuery);
+          qparams.set(CommonParams.ROWS, params.results_num);
           qparams.set("qf", getQuerySearchFields(params));
           qparams.set("fl", new String[]{"id","title","abstract","assignee_orgname","assignee_addressbook_orgname","type","publication_doc_number","tags"});
           req.setParams(qparams);
@@ -197,16 +209,18 @@ public class SemanticSearchHandler extends SearchHandler
           }
         }
         else
-          techQ = orgQ.toLowerCase().replace(" not ", " \\not ").replace(" or ", " \\or ").replace(" and ", " \\and ");
+          techQ = orgQ;
         
         if(techQ.length()>0) {
+          if(params.ci_freetext==false || params.hidden_boolean==false)
+            techQ = techQ.toLowerCase().replace(" not ", " \\not ").replace(" or ", " \\or ").replace(" and ", " \\and ");
           semanticConceptsInfo = semanticsGenerator.doSemanticSearch(techQ, params);
           System.out.println(techQ);
           
           // construct new query with concepts added to it
           String newQuery;
           if(params.hidden_include_q==true)
-            newQuery = getNewQuery(orgQ.toLowerCase().replace(" not ", " \\not ").replace(" or ", " \\or ").replace(" and ", " \\and "), semanticConceptsInfo);
+            newQuery = getNewQuery(techQ, semanticConceptsInfo);
           else
             newQuery = getNewQuery("", semanticConceptsInfo);
                     
@@ -217,6 +231,109 @@ public class SemanticSearchHandler extends SearchHandler
           super.handleRequestBody(req, rsp);
           qparams.set(CommonParams.Q, orgQ);
           qparams.remove("fq");
+        }
+      }
+      else if(params.e_analytic_type==Enums.ENUM_ANALYTIC_TYPE.e_RELEVANCY) {
+        String orgQ = req.getParams().get(CommonParams.Q);
+        String relQ = "";
+     
+        // construct a new query of given assignee innovations and retrieve them
+        HttpSolrServer server = new HttpSolrServer("http://localhost:"+hostPort+"/solr/collection1/");
+        ModifiableSolrParams srcQParams = new ModifiableSolrParams();
+        srcQParams.set(CommonParams.Q, orgQ.toUpperCase());
+        srcQParams.set("defType","edismax");
+        srcQParams.set("qf", new String[]{"id"});
+        srcQParams.set(CommonParams.ROWS, 1);
+        
+        // add target extract field
+        String[] tmpf = getQueryExtractFields(params);
+        String[] extractFields = Arrays.copyOf(tmpf, tmpf.length+2);
+        extractFields[tmpf.length] = "publication_date";
+        extractFields[tmpf.length+1] = "*";
+        
+        srcQParams.set("fl", extractFields);
+        QueryResponse srcQResp = server.query(srcQParams);
+      
+        // loop on results and construct a new query to explore technologies
+        HashMap<String, String> srcinfo = new HashMap<String, String>();
+        String pubdate = null;
+        
+        SolrDocumentList results = srcQResp.getResults();
+        if(results!=null && results.size()==1) {
+          SolrDocument doc = results.get(0);
+          for(String field : extractFields) {
+            if(field.compareTo("publication_date")==0) {
+              pubdate = ((Date)doc.getFieldValue(field)).toInstant().toString();
+            }
+            else if(field.compareTo("*")!=0) {
+              String tmpval = (String)doc.getFieldValue(field);
+              relQ += tmpval + " ";
+            }
+          }
+          
+          // add source info
+          srcinfo.put("id", (String)doc.getFieldValue("id"));
+          srcinfo.put("title", (String)doc.getFieldValue("title"));
+          srcinfo.put("abstract", (String)doc.getFieldValue("abstract"));
+          srcinfo.put("publication_date", pubdate);
+        }
+        else {
+          // clear request and send back bad request syntax
+          req.setParams(new ModifiableSolrParams());
+          throw new SyntaxError("("+orgQ+") does not exist.");
+        }
+        
+        relQ = relQ.toLowerCase().replace(" not ", " \\not ").replace(" or ", " \\or ").replace(" and ", " \\and ");
+        
+        if(relQ.length()>0) {
+          semanticConceptsInfo = semanticsGenerator.doSemanticSearch(relQ, params);
+          System.out.println(relQ);
+          
+          // construct new query with concepts added to it
+          String newQuery;
+          if(params.hidden_include_q==true)
+            newQuery = getNewQuery(relQ, semanticConceptsInfo);
+          else
+            newQuery = getNewQuery("", semanticConceptsInfo);
+                    
+          qparams.set(CommonParams.Q, newQuery);
+          qparams.set(CommonParams.ROWS, params.priors_hits);
+          qparams.set("qf", getQuerySearchFields(params));          
+          qparams.set("fl", new String[]{"id"});
+          qparams.add("fq","publication_date:[* TO "+pubdate+"]");
+          QueryResponse qResp = server.query(qparams);
+       
+          // loop on results and calculate relevancy
+          results = qResp.getResults();          
+          HashMap<String,String> priors = new HashMap<String,String>();
+          if(params.relevancy_priors.length>0 && params.relevancy_priors[0].length()>0) {
+          for(String s : params.relevancy_priors)
+            priors.put(s, "not found");          
+            
+            if(results!=null && results.size()>1) {
+              for(int i=0; i<results.size(); i++) {
+                SolrDocument doc = results.get(i);
+                String id = ((String)doc.getFieldValue("id"));
+                if(priors.containsKey(id))
+                  priors.put(id, String.valueOf(i+1));
+              }
+            }
+          }
+          else {
+            if(results!=null && results.size()>1) {
+              for(int i=0; i<results.size(); i++) {
+                SolrDocument doc = results.get(i);
+                String id = ((String)doc.getFieldValue("id"));                
+                priors.put(id, String.valueOf(i+1));
+              }
+            }
+          }
+          rsp.add("sourceinfo", srcinfo);
+          rsp.add("relevancy", priors);
+          //req.setParams(qparams);
+          //super.handleRequestBody(req, rsp);
+          //qparams.set(CommonParams.Q, orgQ);
+          //qparams.remove("fq");
         }
       }
       else if(params.e_analytic_type==Enums.ENUM_ANALYTIC_TYPE.e_RELATEDNESS) {
@@ -532,6 +649,20 @@ public class SemanticSearchHandler extends SearchHandler
     else
       params.hidden_include_q = false;
 
+    // get boolean flag 
+    tmp = req.getParams().get("hboolean");
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.hidden_boolean = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (hboolean)");
+      }
+    }
+    else
+      params.hidden_boolean = false;
+
     // get show records flag 
     tmp = req.getParams().get("showrecords");
     if(tmp!=null && tmp.length()>0) {
@@ -796,11 +927,60 @@ public class SemanticSearchHandler extends SearchHandler
       else if(tmp.compareToIgnoreCase("relatedness")==0)
         params.e_analytic_type = Enums.ENUM_ANALYTIC_TYPE.e_RELATEDNESS;
       else if(tmp.compareToIgnoreCase("search")==0)
-        params.e_analytic_type = Enums.ENUM_ANALYTIC_TYPE.e_Search;
+        params.e_analytic_type = Enums.ENUM_ANALYTIC_TYPE.e_SEARCH;
+      else if(tmp.compareToIgnoreCase("relevancy")==0)
+        params.e_analytic_type = Enums.ENUM_ANALYTIC_TYPE.e_RELEVANCY;
       else {
         // clear request and send back bad request syntax
         req.setParams(new ModifiableSolrParams());
         throw new SyntaxError("Invalid value for request parameter (analytic)");
+      }
+    }
+    
+    if(params.e_analytic_type==Enums.ENUM_ANALYTIC_TYPE.e_RELEVANCY) {
+      // get ipc filter
+      tmp = req.getParams().get("ipcfilter");
+      if(tmp!=null && tmp.length()>0) {
+        if(tmp.compareToIgnoreCase("none")==0)
+          params.e_ipc_filter = Enums.ENUM_IPC_FILTER.e_NONE;
+        else if(tmp.compareToIgnoreCase("section")==0)
+          params.e_ipc_filter = Enums.ENUM_IPC_FILTER.e_IPC_SECTION;
+        else if(tmp.compareToIgnoreCase("class")==0)
+          params.e_ipc_filter = Enums.ENUM_IPC_FILTER.e_IPC_CLASS;
+        else if(tmp.compareToIgnoreCase("subclass")==0)
+          params.e_ipc_filter = Enums.ENUM_IPC_FILTER.e_IPC_SUBCLASS;
+        else if(tmp.compareToIgnoreCase("group")==0)
+          params.e_ipc_filter = Enums.ENUM_IPC_FILTER.e_IPC_GROUP;
+        else if(tmp.compareToIgnoreCase("subgroup")==0)
+          params.e_ipc_filter = Enums.ENUM_IPC_FILTER.e_IPC_SUBGROUP;
+        else {
+          // clear request and send back bad request syntax
+          req.setParams(new ModifiableSolrParams());
+          throw new SyntaxError("Invalid value for request parameter (ipc filter)");
+        }
+      }
+      
+      // get priors, should be comma separated
+      tmp = req.getParams().get("priors");
+      if(tmp!=null) {
+          params.relevancy_priors = tmp.split(",");          
+      }
+      else {
+          // clear request and send back bad request syntax
+          req.setParams(new ModifiableSolrParams());
+          throw new SyntaxError("Invalid value for request parameter (priors)");
+      }
+   // get priors, should be comma separated
+      tmp = req.getParams().get("priorshits");
+      if(tmp!=null) {
+        if (tmp.matches("\\d+")){
+          params.priors_hits = Integer.parseInt(tmp);
+        }
+        else {
+          // clear request and send back bad request syntax
+          req.setParams(new ModifiableSolrParams());
+          throw new SyntaxError("Invalid value for request parameter (priors)");
+        }
       }
     }
     
@@ -929,7 +1109,7 @@ public class SemanticSearchHandler extends SearchHandler
       }
     }
     
-    // get number of semantic concepts to retrieve
+ // get number of semantic concepts to retrieve
     tmp = req.getParams().get("conceptsno");
     if(tmp!=null) {
       if (tmp.matches("\\d+")){
@@ -939,6 +1119,19 @@ public class SemanticSearchHandler extends SearchHandler
         // clear request and send back bad request syntax
         req.setParams(new ModifiableSolrParams());
         throw new SyntaxError("Invalid value for request parameter (conceptsno)");
+      }
+    }
+    
+    // get number of results to retrieve
+    tmp = req.getParams().get("resultsno");
+    if(tmp!=null && tmp.length()>0) {
+      if (tmp.matches("\\d+")){
+        params.results_num = Integer.parseInt(tmp);
+      }
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (resultsno)");
       }
     }
   }

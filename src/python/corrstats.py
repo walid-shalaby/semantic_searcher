@@ -105,6 +105,7 @@ def independent_corr(xy, ab, n, n2 = None, twotailed=True, conf_level=0.95, meth
     else:
         raise Exception('Wrong method!')
 
+print "old"
 print "msa","w2v","mc",dependent_corr(.82,.93,.84, 30, twotailed=False,method='steiger')
 print "msa","w2v","rg",dependent_corr(.84,.88,.79, 65, twotailed=False,method='steiger')
 print "msa","w2v","wss",dependent_corr(.76,.72,.72, 203, twotailed=False,method='steiger')
@@ -126,6 +127,24 @@ print "adw","nasari","wss",dependent_corr(.75,.73,.76, 203, twotailed=False,meth
 print "nasari","w2v","mc",dependent_corr(.82,.80,.75, 30, twotailed=False,method='steiger')
 print "nasari","w2v","rg",dependent_corr(.84,.78,.71, 65, twotailed=False,method='steiger')
 print "nasari","w2v","wss",dependent_corr(.76,.73,.66, 203, twotailed=False,method='steiger')
+
+print "new"
+print "msa","w2v","mc",dependent_corr(.82,.89,.75, 30, twotailed=False,method='steiger')
+print "msa","w2v","rg",dependent_corr(.84,.83,.74, 65, twotailed=False,method='steiger')
+
+print "msa","adw","mc",dependent_corr(.90,.89,.83, 30, twotailed=False,method='steiger')
+print "msa","adw","rg",dependent_corr(.92,.83,.76, 65, twotailed=False,method='steiger')
+
+print "msa","nasari","mc",dependent_corr(.80,.89,.75, 30, twotailed=False,method='steiger')
+print "msa","nasari","rg",dependent_corr(.78,.83,.77, 65, twotailed=False,method='steiger')
+
+print "adw","w2v","mc",dependent_corr(.90,.82,.80, 30, twotailed=False,method='steiger')
+print "adw","nasari","mc",dependent_corr(.90,.80,.82, 30, twotailed=False,method='steiger')
+print "adw","w2v","rg",dependent_corr(.92,.84,.81, 65, twotailed=False,method='steiger')
+print "adw","nasari","rg",dependent_corr(.92,.78,.80, 65, twotailed=False,method='steiger')
+
+print "nasari","w2v","mc",dependent_corr(.82,.80,.75, 30, twotailed=False,method='steiger')
+print "nasari","w2v","rg",dependent_corr(.84,.78,.71, 65, twotailed=False,method='steiger')
 
 #print independent_corr(0.5 , 0.6, 103, 103, method='fisher')
 

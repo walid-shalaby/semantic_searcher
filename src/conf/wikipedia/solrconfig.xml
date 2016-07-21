@@ -530,7 +530,7 @@
                and old cache.  
       -->
     <filterCache class="solr.FastLRUCache"
-                 size="4194304"
+                 size="5000000"
                  initialSize="512"
                  autowarmCount="0"/>
 
@@ -551,7 +551,7 @@
          this cache will not be autowarmed.  
       -->
     <documentCache class="solr.LRUCache"
-                   size="4194304"
+                   size="5000000"
                    initialSize="512"
                    autowarmCount="0"/>
     

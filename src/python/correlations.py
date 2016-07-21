@@ -13,6 +13,7 @@ import math
 
 #python correlations.py RG-65 /media/wshalaby/b667e28e-5e90-4884-8810-5d897c9e56ce/work/github/solr-4.10.2/solr/example/results/RG-65 /media/wshalaby/b667e28e-5e90-4884-8810-5d897c9e56ce/work/github/solr-4.10.2/solr/example/results/RG-65.txt [r|p|mu|all|allr|allp|allmu]
 #python correlations.py FREE /media/wshalaby/b667e28e-5e90-4884-8810-5d897c9e56ce/work/github/solr-4.10.2/solr/example/results/RG-65/RG-65_seealso_500k_gram3_seealsogram3_len5000_text_asso1_con500_q.txt /media/wshalaby/b667e28e-5e90-4884-8810-5d897c9e56ce/work/github/solr-4.10.2/solr/example/predict/RG-65/RG-65.txt
+#python correlations.py FREE /home/wshalaby/work/papers/MSA/results/cikm/MC-30/5000_gram3_seealsogram3_len5000_seelen0_seealso_sup1_conf0.0_con500_cosine_alltext.txt /home/wshalaby/work/papers/MSA/datasets/predict/MC-30/MC-30.txt
 
 #dataset = "MC-30"
 #dataset = "MTurk-287"
