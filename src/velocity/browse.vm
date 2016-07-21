@@ -74,7 +74,7 @@
           class="demoLayout"
           data-dojo-type="dijit/layout/BorderContainer"
           data-dojo-props="region: 'top', design: 'headline'">
-            #if($analytic!="prior")
+            #if($analytic!="prior" && $analytic!="relevancy")
             <div
             class="edgePanel"
             data-dojo-type="dijit/layout/ContentPane"
@@ -92,7 +92,7 @@
               </div>
             </div>
             #end
-            #if($analytic=="prior")
+            #if($analytic=="prior" || $analytic=="relevancy")
               #set($height = "95%")
               #set($region = "top")
             #else
@@ -100,13 +100,15 @@
               #set($region = "bottom")
             #end            
 
-            #if(($params.get('analytic')=="prior" || $params.get('analytic')=="competitive" || ($params.get('analytic')=="landscape" && $params.get('showrecords')=="on")) &&  $params.get('q'))
+            #if(($params.get('analytic')=="prior" || $params.get('analytic')=="competitive" || $params.get('analytic')=="relevancy" || ($params.get('analytic')=="landscape" && $params.get('showrecords')=="on")) &&  $params.get('q'))
             <div
               class="edgePanel" style="height: $height"
               data-dojo-type="dijit/layout/ContentPane"
               data-dojo-props="region: '$region', splitter: true">              
               #if($params.get('analytic')=="competitive")
                 #parse("competitors.vm")
+              #elseif($params.get('analytic')=="relevancy")
+                #parse("relevancy.vm")
               #else
                   <div class="pagination">
                     #parse("pagination_top.vm")

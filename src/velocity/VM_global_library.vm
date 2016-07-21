@@ -102,6 +102,15 @@
 #if($request.params.get('hsim'))
 &hsim=$request.params.get('hsim')
 #end
+#if($request.params.get('priors'))
+&hshowids=$request.params.get('priors')
+#end
+#if($request.params.get('priorshits'))
+&hshowids=$request.params.get('priorshits')
+#end
+#if($request.params.get('ipcfilter'))
+&hshowids=$request.params.get('ipcfilter')
+#end
 #if($request.params.get('hshowids'))
 &hshowids=$request.params.get('hshowids')
 #end

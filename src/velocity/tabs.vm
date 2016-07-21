@@ -62,6 +62,17 @@
     #end
   </span>
 
+  ## Relevancy analytic
+  #set( $selected = ($analytic == "relevancy") )
+  <span class="tab #if($selected)selected#end">
+    #if($selected)
+      Relevancy Ranking
+    #else
+      <a href="#url_for_home?analytic=relevancy">
+        Relevancy Ranking</a>
+    #end
+  </span>
+
   #*
   ## Search analytic
   #set( $selected = ($analytic == "search") )

@@ -13,7 +13,8 @@ function changeRange(element, val) {
 
 function onSubmit() {
 	if(document.getElementById("analytic").value=="landscape" || 
-	document.getElementById("analytic").value=="prior") {
+	document.getElementById("analytic").value=="prior" || 
+	document.getElementById("analytic").value=="relevancy") {
 		if(document.getElementById("hupdateconcepts").checked==false) {
 		var ignore = document.getElementById("ignsem");
 		svg.selectAll("g.sem_node").each(function(d,i){
@@ -27,6 +28,7 @@ function onSubmit() {
       });
 	}
 	}
+	
 	return true;
 }
 
@@ -144,6 +146,11 @@ function onSubmit() {
 					<input type="checkbox" name="hfreetext" #if($params.get('hfreetext')=='on')checked#end  />Free text	
 				</td>
 				</tr>
+				<tr>
+				<td>
+					<input type="checkbox" name="hboolean" #if($params.get('hboolean'))checked#end  />Boolean Search	
+				</td>
+				</tr>
 
 				<tr>
 				<td>
@@ -241,6 +248,146 @@ function onSubmit() {
 				</tr>					
 				</table>
 			
+		#elseif($analytic=="relevancy")			
+			#set($default='US1111111B1')			
+			#set($default_target='US2222222B1,US3333333B1')
+			<table class="query-table">
+				<tr>
+					<td>
+						<input type="text" id="q" name="q" onfocus="if (this.value=='$default') {this.value='';this.style.color='#000'}; if (document.getElementById('priors') && document.getElementById('priors').value=='$default_target') {document.getElementById('priors').value='';document.getElementById('priors').style.color='#000'};" onblur="if(this.value==''){this.value='$default';this.style.color='#ccc';} else this.style.color='#000';" value="#if($!esc.html($params.get('q')) && $!esc.html($params.get('q'))!="")$!esc.html($params.get('q'))#else$default#end" style=#if($!esc.html($params.get('q')) && $!esc.html($params.get('q'))!="")"color:#000"#else"color:#ccc"#end/>
+					</td>
+				</tr>
+				<tr>
+					<td>
+						<input type="text" id="priors" name="priors" onfocus="if (this.value=='$default_target') {this.value='';this.style.color='#000'};" onblur="if(this.value!='') this.style.color='#000';" value="#if($!esc.html($params.get('priors')))$!esc.html($params.get('priors'))#else$default_target#end" style=#if($!esc.html($params.get('priors')))"color:#000"#else"color:#ccc"#end/>
+						<!--input type="text" id="priors" name="priors" onfocus="if (this.value=='$default_target') {this.value='';this.style.color='#000'};" onblur="if(this.value==''){this.value='$default_target';this.style.color='#ccc';} else this.style.color='#000';" value="#if($!esc.html($params.get('priors')) && $!esc.html($params.get('priors'))!="")$!esc.html($params.get('priors'))#else$default_target#end" style=#if($!esc.html($params.get('priors')) && $!esc.html($params.get('priors'))!="")"color:#000"#else"color:#ccc"#end/-->
+					</td>
+				</tr>
+				<tr>
+					<td align="center">
+	        			<input type="submit" value="Analyze" id="querySubmit"/>
+	        		</td>
+				</tr>
+				<tr>
+				<td align="center">
+					<br/>
+				</td>
+				</tr>
+				<tr>
+				<td>
+					<input type="checkbox" name="hincludeq" #if($params.get('hincludeq')=='on' || !$params.get('hincludeq'))checked#end  />Include Query	
+				</td>
+				</tr>
+				<tr>
+				<td>
+					@:
+					<select id="priorshits" name="priorshits">
+					#if($!esc.html($params.get('priorshits')))
+						#set($selected=$!esc.html($params.get('priorshits')))
+					#else
+						#set($selected = 1000)
+					#end
+					#foreach ($i in [1..10000])
+						#if($i==$selected)
+							<option selected>$i</option>
+						#else
+							<option>$i</option>
+						#end
+					#end
+					</select>
+				</td>
+				</tr>
+				<!--tr>
+				<td>
+					IPC Filter:
+	  					<select id="ipcfilter" name="ipcfilter">
+						#if($!esc.html($params.get('relecancyfilter')))
+							#set($selected=$!esc.html($params.get('relecancyfilter')))
+						#else
+							#set($selected = "None")
+						#end
+						#set( $ipcfilter = {"none" : "none", "section" : "section", "class" : "class", "subclass" : "subclass", "group" : "group", "subgroup" : "subgroup"} )
+						#foreach ($i in $ipcfilter.keySet())
+							#if($i==$selected)
+								<option value=$i selected>$ipcfilter.get($i)</option>
+							#else
+								<option value=$i>$ipcfilter.get($i)</option>
+							#end
+						#end
+						</select>
+  				</td>
+				</tr-->
+				<tr>
+				<td align="center">
+					<br/>
+				</td>
+				</tr>
+				<tr>
+				<td>
+					Method:
+	  					<select id="conceptsmethod" name="conceptsmethod">
+						#if($!esc.html($params.get('conceptsmethod')))
+							#set($selected=$!esc.html($params.get('conceptsmethod')))
+						#else
+							#set($selected = "MSA_seealso_asso")
+						#end
+						##foreach ($i in ["Explicit","MSA_anchors","MSA_seealso","MSA_seealso_asso","MSA_anchors_seealso","MSA_anchors_seealso_asso"])
+						#set( $method = {"Explicit" : "Explicit", "MSA_seealso" : "MSA1", "MSA_seealso_asso" : "MSA2"} )
+						#foreach ($i in $method.keySet())
+							#if($i==$selected)
+								<option value=$i selected>$method.get($i)</option>
+							#else
+								<option value=$i>$method.get($i)</option>
+							#end
+						#end
+						</select>
+  				</td>
+				</tr>
+				<tr>
+				<td>
+					Concepts:
+					<select id="conceptsno" name="conceptsno">
+					#if($!esc.html($params.get('conceptsno')))
+						#set($selected=$!esc.html($params.get('conceptsno')))
+					#else
+						#set($selected = 20)
+					#end
+					#foreach ($i in [0..200])
+						#if($i==$selected)
+							<option selected>$i</option>
+						#else
+							<option>$i</option>
+						#end
+					#end
+					</select>
+				</td>
+				</tr>				
+				<tr>					
+				<td>
+						<fieldset>
+							<legend>Source Field:</legend>
+							<input type="checkbox" name="extractall" #if($params.get('extractall'))checked#end />All<br/>
+							<input type="checkbox" name="extracttitle" #if($params.get('extracttitle') || !$params.get('q'))checked#end />Title<br/>
+							<input type="checkbox" name="extractabstract" #if($params.get('extractabstract'))checked#end />Abstract<br/>
+							<input type="checkbox" name="extractdescription" #if($params.get('extractdescription'))checked#end />Description<br/>
+							<input type="checkbox" name="extractclaims" #if($params.get('extractclaims'))checked#end />Claims<br/>
+						</fieldset>
+				</td>
+				</tr>					
+				<tr>					
+				<td>
+						<fieldset>
+							<legend>Search Fields:</legend>
+							<input type="checkbox" name="searchall" #if($params.get('searchall'))checked#end />All<br/>
+							<input type="checkbox" name="searchtitle" #if($params.get('searchtitle') || !$params.get('q'))checked#end />Title<br/>
+							<input type="checkbox" name="searchabstract" #if($params.get('searchabstract') || !$params.get('q'))checked#end />Abstract<br/>
+							<input type="checkbox" name="searchdescription" #if($params.get('searchdescription'))checked#end />Description<br/>
+							<input type="checkbox" name="searchclaims" #if($params.get('searchclaims') || !$params.get('q'))checked#end />Claims<br/>
+						</fieldset>
+				</td>
+				</tr>					
+				</table>
+			
 		#elseif($analytic=="prior")
 			#set($default='innovation memo')
 			<table class="query-table">
@@ -263,11 +410,39 @@ function onSubmit() {
 
 				<tr>
 				<td>
-					<!--input type="checkbox" name="hincludeq" #if($params.get('hincludeq') || !$params.get('q'))checked#end  /-->
-					<input type="checkbox" name="hincludeq" #if($params.get('hincludeq')=='on')checked#end  />Include Query	
+					<input type="checkbox" name="hincludeq" #if($params.get('hincludeq') || !$params.get('q'))checked#end  />Include Query
+					<!--input type="checkbox" name="hincludeq" #if($params.get('hincludeq')=='on')checked#end  /-->	
 				</td>
 				</tr>
 
+				<tr>
+				<td>
+					<input type="checkbox" name="hboolean" #if($params.get('hboolean'))checked#end  />Boolean Search	
+				</td>
+				</tr>
+
+				<tr>
+				<td>
+					results/page:
+					<select id="resultsno" name="resultsno">
+					#if($!esc.html($params.get('resultsno')))
+						#set($selected=$!esc.html($params.get('resultsno')))
+					#else
+						#set($selected = 10)
+					#end
+					<option>1</option>
+					#foreach ($j in [1..1000])
+						#set ($i = $j * 10)
+						#if($i==$selected)
+							<option selected>$i</option>
+						#else
+							<option>$i</option>
+						#end
+					#end
+					</select>
+				</td>
+				</tr>
+				
 				<tr>
 				<td>
 					Method:
