@@ -120,7 +120,7 @@ public class SemanticSearchHandler extends SearchHandler
       if(params.e_analytic_type==Enums.ENUM_ANALYTIC_TYPE.e_SEARCH) {
         super.handleRequestBody(req, rsp);
       }
-      else if(params.concepts_num>0 && 
+      else if(params.concepts_num>=0 && 
           (params.e_analytic_type==Enums.ENUM_ANALYTIC_TYPE.e_TECH_EXPLORE || 
           params.e_analytic_type==Enums.ENUM_ANALYTIC_TYPE.e_TECH_LANDSCAPE || 
           params.e_analytic_type==Enums.ENUM_ANALYTIC_TYPE.e_PRIOR)) {
@@ -1137,5 +1137,6 @@ public class SemanticSearchHandler extends SearchHandler
   }
 
 }
+
 
 
