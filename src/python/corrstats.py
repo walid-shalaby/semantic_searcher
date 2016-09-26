@@ -146,6 +146,30 @@ print "adw","nasari","rg",dependent_corr(.92,.78,.80, 65, twotailed=False,method
 print "nasari","w2v","mc",dependent_corr(.82,.80,.75, 30, twotailed=False,method='steiger')
 print "nasari","w2v","rg",dependent_corr(.84,.78,.71, 65, twotailed=False,method='steiger')
 
+print "2207"
+print "msa","w2v","mc",dependent_corr(.82,.87,.84, 30, twotailed=False,method='steiger')
+print "msa","w2v","rg",dependent_corr(.84,.86,.78, 65, twotailed=False,method='steiger')
+print "msa","w2v","wss",dependent_corr(.76,.77,.79, 203, twotailed=False,method='steiger')
+print "msa","w2v","wsr",dependent_corr(.64,.71,.70, 252, twotailed=False,method='steiger')
+print "msa","w2v","ws",dependent_corr(.71,.73,.72, 352, twotailed=False,method='steiger')
+print "msa","w2v","men",dependent_corr(.79,.75,.78, 1000, twotailed=False,method='steiger')
+print "msa","adw","mc",dependent_corr(.90,.87,.78, 30, twotailed=False,method='steiger')
+print "msa","adw","rg",dependent_corr(.92,.86,.78, 65, twotailed=False,method='steiger')
+print "msa","adw","wss",dependent_corr(.75,.77,.67, 203, twotailed=False,method='steiger')
+print "msa","nasari","mc",dependent_corr(.80,.87,.73, 30, twotailed=False,method='steiger')
+print "msa","nasari","rg",dependent_corr(.78,.86,.77, 65, twotailed=False,method='steiger')
+print "msa","nasari","wss",dependent_corr(.73,.77,.70, 203, twotailed=False,method='steiger')
+print "adw","w2v","mc",dependent_corr(.90,.82,.80, 30, twotailed=False,method='steiger')
+print "adw","w2v","rg",dependent_corr(.92,.84,.81, 65, twotailed=False,method='steiger')
+print "adw","w2v","wss",dependent_corr(.75,.76,.68, 203, twotailed=False,method='steiger')
+print "adw","nasari","mc",dependent_corr(.90,.80,.82, 30, twotailed=False,method='steiger')
+print "adw","nasari","rg",dependent_corr(.92,.78,.80, 65, twotailed=False,method='steiger')
+print "adw","nasari","wss",dependent_corr(.75,.73,.76, 203, twotailed=False,method='steiger')
+print "nasari","w2v","mc",dependent_corr(.82,.80,.75, 30, twotailed=False,method='steiger')
+print "nasari","w2v","rg",dependent_corr(.84,.78,.71, 65, twotailed=False,method='steiger')
+print "nasari","w2v","wss",dependent_corr(.76,.73,.66, 203, twotailed=False,method='steiger')
+
+
 #print independent_corr(0.5 , 0.6, 103, 103, method='fisher')
 
 #print dependent_corr(.396, .179, .088, 200, method='zou')

@@ -18,6 +18,8 @@
 package org.apache.solr.handler.component;
 
 import java.io.FileWriter;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -59,6 +61,7 @@ public class SemanticSearchHandler extends SearchHandler
   String wikiUrl = "";
   String associationspath = "";
   String hostPort = "";
+  long file_count = 1;
   
   /* 
    *
@@ -82,7 +85,6 @@ public class SemanticSearchHandler extends SearchHandler
     // cache Wiki titles with some required information for fast retrieval
     semanticsGenerator.cacheConceptsInfo(wikiUrl, true, true);
     //cachedConceptsInfo = new HashMap<String,CachedConceptInfo>();
-    
   }
 
   @Override
@@ -92,17 +94,12 @@ public class SemanticSearchHandler extends SearchHandler
     
     String escapedQ = StringEscapeUtils.escapeJavaScript(StringEscapeUtils.escapeHtml(req.getParams().get(CommonParams.Q)));
     
-    if(escapedQ!=null && escapedQ.length()>0)
-    {
+    if(escapedQ!=null && escapedQ.length()>0) {
       String tmp = req.getParams().get("analytic");
       String tmp1 = StringEscapeUtils.escapeJavaScript(StringEscapeUtils.escapeHtml(req.getParams().get("q1")));
       if(tmp!=null && tmp.length()>0 && tmp.compareToIgnoreCase("relatedness")==0 && tmp1!=null && tmp1.length()>0)
         escapedQ += "___"+tmp1;
         
-      // log concept to file
-      FileWriter f = new FileWriter("./msa_log/"+escapedQ.substring(0,escapedQ.length()>255?255:escapedQ.length()));
-      f.close();
-     
       SemanticSearchConfigParams params = new SemanticSearchConfigParams(); 
       
       ModifiableSolrParams qparams = new ModifiableSolrParams(req.getParams());
@@ -111,6 +108,19 @@ public class SemanticSearchHandler extends SearchHandler
       params.wikiUrl = wikiUrl;
       ParseRequestParams(req, params, qparams);
       
+      // log concept to file
+      DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss");
+      Date date = new Date();
+      String filename = dateFormat.format(date)+"_"+hostPort+"_"+String.valueOf(file_count);
+      synchronized (this) {
+        // do something thread-safe
+        file_count++;
+      }
+      FileWriter f = new FileWriter("./msa_log/"+filename);
+      f.write(escapedQ);
+      //FileWriter f = new FileWriter("./msa_log/"+escapedQ.substring(0,escapedQ.length()>255?255:escapedQ.length()));
+      f.close();
+     
       //req.setParams(qparams);
       
       //if(params.hidden_relax_search==false) {
@@ -135,12 +145,12 @@ public class SemanticSearchHandler extends SearchHandler
           if(params.hidden_include_q==true) {
             String tmpq = orgQ;
             if(params.hidden_boolean==false)
-              newQuery = getNewQuery(tmpq.toLowerCase().replace(" not ", " \\not ").replace(" or ", " \\or ").replace(" and ", " \\and "), semanticConceptsInfo);
+              newQuery = getNewQuery(tmpq.toLowerCase().replace(" not ", " \\not ").replace(" or ", " \\or ").replace(" and ", " \\and "), semanticConceptsInfo, params);
             else
-              newQuery = getNewQuery(tmpq, semanticConceptsInfo);
+              newQuery = getNewQuery(tmpq, semanticConceptsInfo, params);
           }
           else
-            newQuery = getNewQuery("", semanticConceptsInfo);
+            newQuery = getNewQuery("", semanticConceptsInfo, params);
           
           fillTechLandscapeQParams(newQuery, new String[]{"{!ex=fqs}publication_year,ipc_section"}, new String[]{}, params, qparams);
           
@@ -157,10 +167,10 @@ public class SemanticSearchHandler extends SearchHandler
             String tmpq = req.getParams().get(CommonParams.Q);
             if(params.hidden_boolean==false)
               tmpq = tmpq.toLowerCase().replace(" not ", " \\not ").replace(" or ", " \\or ").replace(" and ", " \\and ");
-            newQuery = getNewQuery(tmpq, semanticConceptsInfo);
+            newQuery = getNewQuery(tmpq, semanticConceptsInfo, params);
           }
           else
-            newQuery = getNewQuery("", semanticConceptsInfo);
+            newQuery = getNewQuery("", semanticConceptsInfo, params);
           
           qparams.set(CommonParams.Q, newQuery);
           qparams.set(CommonParams.ROWS, params.results_num);
@@ -220,9 +230,9 @@ public class SemanticSearchHandler extends SearchHandler
           // construct new query with concepts added to it
           String newQuery;
           if(params.hidden_include_q==true)
-            newQuery = getNewQuery(techQ, semanticConceptsInfo);
+            newQuery = getNewQuery(techQ, semanticConceptsInfo, params);
           else
-            newQuery = getNewQuery("", semanticConceptsInfo);
+            newQuery = getNewQuery("", semanticConceptsInfo, params);
                     
           fillTechLandscapeQParams(newQuery, new String[]{"{!ex=fqs}publication_year,ipc_section"}, 
               new String[]{"{!ex=fqs}assignee","{!ex=fqs}assignee_addressbook_orgname_exact","{!ex=fqs}assignee_exact"}, params, qparams);         
@@ -292,9 +302,9 @@ public class SemanticSearchHandler extends SearchHandler
           // construct new query with concepts added to it
           String newQuery;
           if(params.hidden_include_q==true)
-            newQuery = getNewQuery(relQ, semanticConceptsInfo);
+            newQuery = getNewQuery(relQ, semanticConceptsInfo, params);
           else
-            newQuery = getNewQuery("", semanticConceptsInfo);
+            newQuery = getNewQuery("", semanticConceptsInfo, params);
                     
           qparams.set(CommonParams.Q, newQuery);
           qparams.set(CommonParams.ROWS, params.priors_hits);
@@ -409,17 +419,25 @@ public class SemanticSearchHandler extends SearchHandler
   }
 
   private String getNewQuery(String org,
-      NamedList<Object> semanticConceptsInfo) {
+      NamedList<Object> semanticConceptsInfo, SemanticSearchConfigParams params) {
     String newQuery = org;
     if(semanticConceptsInfo!=null){ 
       for(int i=0; i<semanticConceptsInfo.size(); i++) {
         SimpleOrderedMap<Object> obj = (SimpleOrderedMap<Object>)semanticConceptsInfo.getVal(i);
         Integer ignore = (Integer)obj.get("ignore");
          if(ignore.intValue()==0) { // shouldn't be ignored
-          if(newQuery.isEmpty())
-            newQuery = "\"" + semanticConceptsInfo.getName(i) + "\"";
-          else
-            newQuery += " OR \"" + semanticConceptsInfo.getName(i) + "\"";
+          if(newQuery.isEmpty()) {
+            if(params.hidden_unquote_concepts==false)
+              newQuery = "\"" + semanticConceptsInfo.getName(i) + "\"";
+            else
+              newQuery = semanticConceptsInfo.getName(i);
+          }
+          else {
+            if(params.hidden_unquote_concepts==false)
+              newQuery += " OR \"" + semanticConceptsInfo.getName(i) + "\"";
+            else
+              newQuery += " " + semanticConceptsInfo.getName(i);
+          }
           }
       }
     }
@@ -501,6 +519,20 @@ public class SemanticSearchHandler extends SearchHandler
     else
       params.hidden_relatedness_experiment = false;
     
+    // get quote concepts flag 
+    tmp = req.getParams().get("hunquoteconcepts");
+    if(tmp!=null && tmp.length()>0) {
+      if(tmp.compareTo("on")==0)
+        params.hidden_unquote_concepts = true;
+      else {
+        // clear request and send back bad request syntax
+        req.setParams(new ModifiableSolrParams());
+        throw new SyntaxError("Invalid value for request parameter (hunquoteconcepts)");
+      }
+    }
+    else
+      params.hidden_unquote_concepts = false;
+    
     // get pagerank weighting flag 
     tmp = req.getParams().get("hpagerankweight");
     if(tmp!=null && tmp.length()>0) {
@@ -513,7 +545,7 @@ public class SemanticSearchHandler extends SearchHandler
       }
     }
     else
-      params.hidden_relatedness_experiment = false;
+      params.hidden_pagerank_weighting = false;
     
  // get enable title search flag 
     tmp = req.getParams().get("titlesearch");
