@@ -284,22 +284,58 @@ _compat_pickle.IMPORT_MAPPING.update({
 })
 
 #model_path = "/media/wshalaby/b667e28e-5e90-4884-8810-5d897c9e56ce/work/github/solr-4.10.2/solr/example/clef-2010/samples/models/wiki-doc2vec.model"
-model_path = "/scratch/wshalaby/doc2vec/wiki-doc2vec.model"
+#model_path = "/scratch/wshalaby/doc2vec/models/wiki-doc2vec.model"
 #model_path = "/home/wshalaby/work/github/solr-4.10.2/solr/example/clef-2010/samples/wiki-doc2vec.model"
 #keep_path = "/media/wshalaby/b667e28e-5e90-4884-8810-5d897c9e56ce/work/patents/innovation-analytics/data/esa/DatalessClassification/data/20newsgroups.simple.esa.concepts.500+tree.lst"
-keep_path = "/scratch/wshalaby/doc2vec/20newsgroups.simple.esa.concepts.500+tree.lst"
+#keep_path = "/scratch/wshalaby/doc2vec/20newsgroups.simple.esa.concepts.500+tree.lst"
 #keep_path = "/home/wshalaby/work/github/WikiToolbox/20newsgroups.simple.esa.concepts.500+tree.lst"
 #mappings_path = "/media/wshalaby/b667e28e-5e90-4884-8810-5d897c9e56ce/root/Desktop/data-and-indices/patents-data/CLEF-IP/experiments/wiki_ids_titles.csv"
-mappings_path = "/scratch/wshalaby/doc2vec/wiki_ids_titles.csv"
 #mappings_path = "/home/wshalaby/work/github/WikiToolbox/wiki_ids_titles.csv"
 #outpath = "/media/wshalaby/b667e28e-5e90-4884-8810-5d897c9e56ce/work/github/solr-4.10.2/solr/example/clef-2010/samples/wiki_sims.txt11"
-outpath = "/scratch/wshalaby/doc2vec/wiki_sims.txt"
 #outpath = "/home/wshalaby/work/github/solr-4.10.2/solr/example/clef-2010/samples/wiki_sims.txt"
+
+model_path = "/scratch/wshalaby/doc2vec/models/wikipedia-2016.500.30out.model"
+outpath = "/scratch/wshalaby/doc2vec/models/wiki_sims.500.30out.txt"
+wiki_esa_mapping_path = "/scratch/wshalaby/doc2vec/wiki_esa_ids.tsv"
+mappings_path = "/scratch/wshalaby/doc2vec/wiki_ids_titles.csv"
+keep_path = "/scratch/wshalaby/doc2vec/wikipedia-2016.500.30out.lst"
+
+model_path = "/scratch/wshalaby/doc2vec/models/wikipedia-2016.500.30out.model"
+outpath = "/scratch/wshalaby/doc2vec/models/wiki_sims.500.30out.txt"
+wiki_esa_mapping_path = "/scratch/wshalaby/doc2vec/wiki_esa_ids.tsv"
+mappings_path = "/scratch/wshalaby/doc2vec/wiki_ids_titles.csv"
+keep_path = "/scratch/wshalaby/doc2vec/wikipedia-2016.500.30out.lst"
+
+model_path = '/scratch/wshalaby/doc2vec/models/word2vec/concepts.500.30out.model'
+outpath =   "/scratch/wshalaby/doc2vec/models/word2vec/concepts-sims-wvec.500.30out.txt"
+wiki_esa_mapping_path = "/scratch/wshalaby/doc2vec/wiki_esa_ids.tsv"
+mappings_path = "/scratch/wshalaby/doc2vec/wiki_ids_titles.csv"
+keep_path = "/scratch/wshalaby/doc2vec/wikipedia-2016.500.30out.lst"
+
+model_path = '/scratch/wshalaby/doc2vec/models/word2vec/concepts-10iter.500.30out.model'
+outpath =   "/scratch/wshalaby/doc2vec/models/word2vec/concepts-10iter-sims-wvec.500.30out.txt"
+wiki_esa_mapping_path = "/scratch/wshalaby/doc2vec/wiki_esa_ids.tsv"
+mappings_path = "/scratch/wshalaby/doc2vec/wiki_ids_titles.csv"
+keep_path = "/scratch/wshalaby/doc2vec/wikipedia-2016.500.30out.lst"
+
+model_path = '/scratch/wshalaby/doc2vec/models/word2vec/concepts.model'
+outpath =   "/scratch/wshalaby/doc2vec/models/word2vec/concepts.txt"
+wiki_esa_mapping_path = ""
+mappings_path = "/scratch/wshalaby/doc2vec/wiki_ids_titles.csv"
+keep_path = ""
+
+model_path = '/scratch/wshalaby/doc2vec/models/word2vec/concepts-10iter.model'
+outpath =   "/scratch/wshalaby/doc2vec/models/word2vec/concepts-10iter.txt"
+wiki_esa_mapping_path = ""
+mappings_path = "/scratch/wshalaby/doc2vec/wiki_ids_titles.csv"
+keep_path = ""
+
 outfile = open(outpath,"w")
 mappings = {}
 models = [None,None,None,None,None,None,None,None,None,None]
 
-def get_sims(srcs):
+import sys
+def get_sims_w2vec(srcs):
     global mappings, models
     #print("loading model")
     #model = gensim.models.Doc2Vec.load(model_path)
@@ -309,17 +345,50 @@ def get_sims(srcs):
         cnt = src[0]
         id = src[1]
         title = src[2]
-        print(cnt+" "+title)
         sims = []
-        sims = models[list(srcs.keys())[0]].docvecs.most_similar(id,topn=50)
-        ext_sims = []
-        for sim in sims:
-            #if sim[0] in mappings.keys():
-            try:
-                ext_sims.append((mappings[sim[0]],sim[1]))
-            except:
-                continue
-        res[title] = ext_sims
+        try:
+            sims = models[list(srcs.keys())[0]].most_similar(title,topn=50)
+            print(cnt+" ("+id+") ("+title+")")
+            ext_sims = []
+            for sim in sims:
+                if sim[0] in mappings:
+                    ext_sims.append((sim[0],sim[1]))
+                else:
+                    print("Oops...("+sim[0]+"), similar doc doesn't exist!")
+            res[title] = ext_sims
+        except:            
+            print("Oops..."+cnt+" ("+id+") ("+title+"), doc doesn't exist!")            
+            res[title] = []
+            continue
+    return res
+    
+def get_sims_doc2vec(srcs):
+    global mappings, models
+    #print("loading model")
+    #model = gensim.models.Doc2Vec.load(model_path)
+    #model.init_sims(replace=True)
+    res = {}
+    for src in list(srcs.values())[0]:
+        cnt = src[0]
+        id = src[1]
+        title = src[2]
+        sims = []
+        if id in models[list(srcs.keys())[0]].docvecs.doctags:
+            print(cnt+" ("+id+") ("+title+")")
+            sims = models[list(srcs.keys())[0]].docvecs.most_similar(id,topn=50)
+            ext_sims = []
+            for sim in sims:
+                #if sim[0] in mappings.keys():
+                try:
+                    ext_sims.append((mappings[sim[0]],sim[1]))
+                except:
+                    print("Oops...("+sim[0]+"), similar doc doesn't exist!")
+                    continue
+            res[title] = ext_sims
+        else:            
+            print("Oops..."+cnt+" ("+id+") ("+title+"), doc doesn't exist!")            
+            res[title] = []
+            continue
     return res
     
 def write_sims(res):
@@ -337,42 +406,71 @@ def main():
     
     for i in range(4):
         print("loading model")
-        models[i] = gensim.models.Doc2Vec.load(model_path)
-        models[i].init_sims(replace=True)
+        if len(sys.argv)>1 and sys.argv[1]=='w2v':
+            models[i] = gensim.models.Word2Vec.load(model_path)
+            models[i].init_sims(replace=True)
+        else:
+            models[i] = gensim.models.Doc2Vec.load(model_path)
+            models[i].init_sims(replace=True)
     #wiki_ids = list(model.docvecs.doctags)
     #print("loaded "+str(len(wiki_ids))+" ids")
     
     to_keep = set()
-    print("loading keey only")
-    with open(keep_path) as titles:
-        for title in titles:
-            to_keep.add(title.replace(os.linesep,""))
-        
-    print("loaded "+str(len(to_keep))+" keep only")
+    if keep_path!="":
+        print("loading keey only")
+        with open(keep_path) as titles:
+            for title in titles:
+                to_keep.add(title.replace(os.linesep,""))
+    
+    wiki_esa_mapping = {}
+    if wiki_esa_mapping_path!="":
+        print("loading wiki esa mappings")
+        with open(wiki_esa_mapping_path) as wiki_esas:
+            for wiki_esa in wiki_esas:
+                tokens = wiki_esa.replace(os.linesep,"").split("\t")
+                wiki_esa_mapping[tokens[1]] = tokens[0]            
+    
+    print("loaded "+str(len(wiki_esa_mapping))+" wiki esa mappings")
     
     print("loading mappings")
     records = csv.DictReader(open(mappings_path))
     for pair in records:
         if len(to_keep)==0 or pair['title'] in to_keep:
-            mappings[pair['id']] = pair['title']
+            if len(wiki_esa_mapping)>0:
+                if len(sys.argv)>1 and sys.argv[1]=='w2v':
+                    mappings[pair['title']] = wiki_esa_mapping[pair['id']]
+                else:
+                    mappings[wiki_esa_mapping[pair['id']]] = pair['title']
+            else:
+                mappings[pair['title']] = pair['id']
         
     print("loaded "+str(len(mappings))+" mappings")
     
     cnt = 1
     srclis = []
-    for id,title in mappings.items():
+    for k,v in mappings.items():
         cnt = cnt + 1
-        srclis.append([str(cnt),id,title])
+        if len(sys.argv)>1 and sys.argv[1]=='w2v':
+            srclis.append([str(cnt),v,k])
+        else:
+            srclis.append([str(cnt),k,v])
         if cnt % 400==0:
-            res = Parallel(n_jobs=4)(delayed(get_sims)({i%100:srclis[i:i+99]}) for i in [0,100,200,300])
+            if len(sys.argv)>1 and sys.argv[1]=='w2v':
+                res = Parallel(n_jobs=4)(delayed(get_sims_w2vec)({i%100:srclis[i:i+99]}) for i in [0,100,200,300])            
+            else:
+                res = Parallel(n_jobs=4)(delayed(get_sims_doc2vec)({i%100:srclis[i:i+99]}) for i in [0,100,200,300])
             write_sims(res)
             srclis = []
             res.clear()
 
-    res = Parallel(n_jobs=4)(delayed(get_sims)({i%100:srclis[i:i+99]}) for i in [0,100,200,300])
+    if len(sys.argv)>1 and sys.argv[1]=='w2v':
+        res = Parallel(n_jobs=4)(delayed(get_sims_w2vec)({i%100:srclis[i:i+99]}) for i in [0,100,200,300])
+    else:
+        res = Parallel(n_jobs=4)(delayed(get_sims_doc2vec)({i%100:srclis[i:i+99]}) for i in [0,100,200,300])
     write_sims(res)
             
     outfile.close()        
     
 main()
+
 

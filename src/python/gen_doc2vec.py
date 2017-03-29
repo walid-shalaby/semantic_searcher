@@ -18,8 +18,10 @@ from os.path import isfile, join
 from time import gmtime, strftime
 import gensim
 
-inpath = "/home/wshalaby/work/github/solr-4.10.2/solr/example/clef-2010/samples/corpus"
-outpath = "/home/wshalaby/work/github/solr-4.10.2/solr/example/clef-2010/samples/doc2vec.model"
+#inpath = "/home/wshalaby/work/github/solr-4.10.2/solr/example/clef-2010/samples/corpus"
+#outpath = "/home/wshalaby/work/github/solr-4.10.2/solr/example/clef-2010/samples/doc2vec.model"
+inpath = "/scratch/wshalaby/doc2vec/wikipedia-2016.500.30out"
+outpath = "/scratch/wshalaby/doc2vec/wikipedia-2016.500.30out-dm.model"
 
     
 # Preparing the data for Gensim Doc2vec
@@ -57,16 +59,17 @@ LabeledSentence = gensim.models.doc2vec.LabeledSentence
 it = LabeledLineSentence(data, docLabels)#DocIt.DocIterator(data, docLabels)          
 
 print(strftime("%Y-%m-%d %H:%M:%S", gmtime()))
-model = gensim.models.Doc2Vec(size=300, window=10, min_count=50, workers=12,alpha=0.025, min_alpha=0.025) # use fixed learning rate
+model = gensim.models.Doc2Vec(size=300, window=10, min_count=50, workers=10,alpha=0.025, min_alpha=0.025) # use fixed learning rate
 print(strftime("%Y-%m-%d %H:%M:%S", gmtime()))
 model.build_vocab(it)
 print(strftime("%Y-%m-%d %H:%M:%S", gmtime()))
 for epoch in range(10):
-    print(iteration+str(epoch))
+    print("iteration"+str(epoch))
     model.train(it)
     model.alpha -= 0.002 # decrease the learning rate
     model.min_alpha = model.alpha # fix the learning rate, no deca
     model.train(it)
+    print(strftime("%Y-%m-%d %H:%M:%S", gmtime()))
     model.save(outpath)
 print(strftime("%Y-%m-%d %H:%M:%S", gmtime()))    
 model.save(outpath)
@@ -76,3 +79,4 @@ print(strftime("%Y-%m-%d %H:%M:%S", gmtime()))
 model = gensim.models.Doc2Vec.load(outpath)
 print(model.docvecs.most_similar("US7470671B2"))
 print(strftime("%Y-%m-%d %H:%M:%S", gmtime()))
+
